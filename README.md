@@ -22,7 +22,7 @@ C# / .NET 10 minimal API, PostgreSQL (EF Core), xUnit, Docker, GitHub Actions.
 ## Develop
 
 ```bash
-dotnet run --project src/BudgetTracker.Api   # http://localhost:5000/health
+dotnet run --project src/BudgetTracker.Api   # http://localhost:5268/health
 dotnet test
 docker build -t budget-tracker . && docker run -p 8080:8080 budget-tracker
 ```
