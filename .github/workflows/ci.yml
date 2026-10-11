@@ -24,3 +24,39 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: docker build -t budget-tracker .
+
+  migrations:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: budget
+          POSTGRES_PASSWORD: budget
+          POSTGRES_DB: budget
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U budget -d budget"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      CONNECTION: Host=localhost;Port=5432;Database=budget;Username=budget;Password=budget
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet tool restore
+      - run: dotnet restore
+      - name: Build migration bundle
+        run: dotnet ef migrations bundle --project src/BudgetTracker.Api --output efbundle --force
+      - name: Apply bundle to an empty database
+        run: ./efbundle --connection "$CONNECTION"
+      - name: Apply again (must be a no-op)
+        run: ./efbundle --connection "$CONNECTION"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: efbundle
+          path: efbundle
