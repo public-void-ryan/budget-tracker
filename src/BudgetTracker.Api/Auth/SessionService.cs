@@ -25,7 +25,7 @@ public sealed class SessionService(BudgetDbContext db, TimeProvider time, IOptio
         // the rows it can see, so logins can evict a session another login just kept (ending
         // under the cap) or miss it (ending over it). The lock is on the user's row and is held
         // until commit, so each login sees the previous one's committed result.
-        await db.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM users WHERE id = {userId} FOR UPDATE", ct);
+        await db.AcquireUserLockAsync(userId, ct);
 
         db.Sessions.Add(session);
         await db.SaveChangesAsync(ct);

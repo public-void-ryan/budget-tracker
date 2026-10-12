@@ -21,9 +21,6 @@ public static class AccountEndpoints
 {
     public const int NameMaxLength = 100;
 
-    private static readonly string[] TypeNames = Enum.GetNames<AccountType>();
-    private static readonly string AllowedTypes = string.Join(", ", TypeNames);
-
     public static IEndpointRouteBuilder MapAccountEndpoints(this IEndpointRouteBuilder app)
     {
         var accounts = app.MapGroup("/accounts").WithTags("Accounts").RequireAuthorization();
@@ -88,32 +85,10 @@ public static class AccountEndpoints
     private static AccountResponse ToResponse(Account account) =>
         new(account.Id, account.Name, account.Type.ToString(), account.InvertSign, account.ArchivedAt);
 
-    /// <summary>
-    /// Strict on purpose: the canonical spelling only (after trimming), so a typo is an error,
-    /// not a guess. It matches against the exact names rather than using Enum.TryParse, which
-    /// also accepts numbers and comma-separated lists whose values it ORs together, so that
-    /// "Checking, Savings" would have been accepted as a valid type.
-    /// </summary>
-    private static (AccountType Type, IReadOnlyList<ValidationError> Errors) ParseType(string? raw)
-    {
-        var text = raw?.Trim();
-        if (string.IsNullOrEmpty(text))
-        {
-            return (default, [new("type", "type.required", "Type is required.")]);
-        }
-
-        if (!Array.Exists(TypeNames, name => name == text))
-        {
-            return (default, [new("type", "type.invalid", $"Type must be one of: {AllowedTypes}.")]);
-        }
-
-        return (Enum.Parse<AccountType>(text), []);
-    }
-
     private static (string Name, AccountType Type, IReadOnlyList<ValidationError> Errors) Validate(AccountRequest request)
     {
         var (name, nameErrors) = TextRules.RequiredText(request.Name, "name", NameMaxLength);
-        var (type, typeErrors) = ParseType(request.Type);
+        var (type, typeErrors) = EnumRules.ParseExact<AccountType>(request.Type, "type");
         return (name, type, [.. nameErrors, .. typeErrors]);
     }
 

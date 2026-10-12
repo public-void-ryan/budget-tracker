@@ -7,6 +7,7 @@ using BudgetTracker.Api.Categories;
 using BudgetTracker.Api.Transactions;
 using BudgetTracker.Api.Data;
 using BudgetTracker.Api.Imports;
+using BudgetTracker.Api.Rules;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
@@ -31,6 +32,11 @@ builder.Services
     .ValidateDataAnnotations()
     .ValidateOnStart();
 builder.Services.AddHostedService<ExpiredSessionPurger>();
+builder.Services
+    .AddOptions<RuleOptions>()
+    .Bind(builder.Configuration.GetSection(RuleOptions.Section))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
 builder.Services.Configure<AuthRateLimitOptions>(builder.Configuration.GetSection(AuthRateLimitOptions.Section));
 
 // ASP.NET reads numbers from strings by default ("12.50" as 12.5). Amounts are documented as
@@ -110,6 +116,7 @@ app.MapCategoryEndpoints();
 app.MapAccountEndpoints();
 app.MapTransactionEndpoints();
 app.MapImportEndpoints();
+app.MapRuleEndpoints();
 
 // Off unless switched on: appsettings.Development.json enables it for local work. Read from
 // app.Configuration (after Build) so every configuration source has been applied.

@@ -34,6 +34,11 @@ public static class Problems
         title: "Incorrect password.",
         extensions: new Dictionary<string, object?> { ["code"] = "auth.incorrect_password" });
 
+    public static IResult Unprocessable(string code, string title) => Results.Problem(
+        statusCode: StatusCodes.Status422UnprocessableEntity,
+        title: title,
+        extensions: new Dictionary<string, object?> { ["code"] = code });
+
     public static IResult Conflict(string code, string title) => Results.Problem(
         statusCode: StatusCodes.Status409Conflict,
         title: title,

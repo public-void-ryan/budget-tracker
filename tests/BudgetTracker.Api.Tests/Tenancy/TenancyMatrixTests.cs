@@ -16,7 +16,7 @@ namespace BudgetTracker.Api.Tests.Tenancy;
 public class TenancyMatrixTests(PostgresFixture fixture) : ApiTest(fixture)
 {
     private sealed record Person(
-        string Token, Account Account, Account Archived, Category Category, Transaction Transaction);
+        string Token, Account Account, Account Archived, Category Category, Transaction Transaction, Rule Rule);
 
     private sealed record Attempt(
         string Label, HttpMethod Method, string Url, object? Body, HttpStatusCode Expected, string Code, string? Csv = null);
@@ -41,8 +41,17 @@ public class TenancyMatrixTests(PostgresFixture fixture) : ApiTest(fixture)
         };
         Db.Add(transaction);
         Db.Add(new Budget { UserId = user.Id, CategoryId = category.Id, Month = new DateOnly(2026, 10, 1), Amount = 300m });
+        var rule = new Rule
+        {
+            UserId = user.Id,
+            CategoryId = category.Id,
+            Position = 0,
+            MatchType = RuleMatchType.Contains,
+            Pattern = $"{label}-merchant",
+        };
+        Db.Add(rule);
         await Db.SaveChangesAsync();
-        return new Person(token, account, archived, category, transaction);
+        return new Person(token, account, archived, category, transaction, rule);
     }
 
     /// <summary>Every row of every table, in a fixed order, as one string.</summary>
@@ -54,6 +63,7 @@ public class TenancyMatrixTests(PostgresFixture fixture) : ApiTest(fixture)
         transactions = await Db.Transactions.AsNoTracking().OrderBy(t => t.Id)
             .Select(t => new { t.Id, t.UserId, t.AccountId, t.CategoryId, t.PostedOn, t.Amount, t.Description, t.IsTransfer, t.CreatedAt }).ToListAsync(),
         budgets = await Db.Budgets.AsNoTracking().OrderBy(b => b.Id).Select(b => new { b.Id, b.UserId, b.CategoryId, b.Month, b.Amount }).ToListAsync(),
+        rules = await Db.Rules.AsNoTracking().OrderBy(r => r.Id).Select(r => new { r.Id, r.UserId, r.CategoryId, r.Position, r.MatchType, r.Pattern, r.MarkTransfer }).ToListAsync(),
         sessions = await Db.Sessions.AsNoTracking().OrderBy(s => s.Id).Select(s => new { s.Id, s.UserId }).ToListAsync(),
     });
 
@@ -79,6 +89,12 @@ public class TenancyMatrixTests(PostgresFixture fixture) : ApiTest(fixture)
         yield return new("preview an import into their account", HttpMethod.Post, $"/accounts/{owner.Account.Id}/imports?dryRun=true", null, notFound, "not_found", File);
         yield return new("import into their archived account", HttpMethod.Post, $"/accounts/{owner.Archived.Id}/imports", null, notFound, "not_found", File);
         yield return new("preview an import into their archived account", HttpMethod.Post, $"/accounts/{owner.Archived.Id}/imports?dryRun=true", null, notFound, "not_found", File);
+        yield return new("read their rule", HttpMethod.Get, $"/rules/{owner.Rule.Id}", null, notFound, "not_found");
+        yield return new("replace their rule", HttpMethod.Put, $"/rules/{owner.Rule.Id}", new { pattern = "x", matchType = "Contains", markTransfer = true }, notFound, "not_found");
+        yield return new("delete their rule", HttpMethod.Delete, $"/rules/{owner.Rule.Id}", null, notFound, "not_found");
+        yield return new("create a rule assigning their category", HttpMethod.Post, "/rules", new { pattern = "attack", matchType = "Contains", categoryId = owner.Category.Id }, refused, "category.invalid");
+        yield return new("point my rule at their category", HttpMethod.Put, $"/rules/{attacker.Rule.Id}", new { pattern = "attack", matchType = "Contains", categoryId = owner.Category.Id }, refused, "category.invalid");
+        yield return new("reorder including their rule", HttpMethod.Post, "/rules/order", new { ids = new[] { attacker.Rule.Id, owner.Rule.Id } }, refused, "order.mismatch");
         yield return new("read their category", HttpMethod.Get, $"/categories/{owner.Category.Id}", null, notFound, "not_found");
         yield return new("rename their category", HttpMethod.Put, $"/categories/{owner.Category.Id}", new { name = "x" }, notFound, "not_found");
         yield return new("delete their category", HttpMethod.Delete, $"/categories/{owner.Category.Id}", null, notFound, "not_found");
@@ -132,13 +148,14 @@ public class TenancyMatrixTests(PostgresFixture fixture) : ApiTest(fixture)
         {
             owner.Account.Id.ToString(), owner.Archived.Id.ToString(), owner.Category.Id.ToString(),
             owner.Transaction.Id.ToString(), owner.Account.Name, owner.Archived.Name,
-            owner.Category.Name, owner.Transaction.Description,
+            owner.Category.Name, owner.Transaction.Description, owner.Rule.Id.ToString(), owner.Rule.Pattern,
         };
 
         foreach (var url in new[]
         {
             "/accounts?includeArchived=true", "/categories", "/transactions",
             $"/transactions?accountId={owner.Account.Id}", $"/transactions?categoryId={owner.Category.Id}",
+            "/rules", $"/rules/match?description={owner.Rule.Pattern}",
         })
         {
             var text = await (await SendAsync(HttpMethod.Get, url, attacker.Token)).Content.ReadAsStringAsync();
