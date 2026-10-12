@@ -111,6 +111,18 @@ if (MaintenanceCommands.IsCommand(args))
     return await MaintenanceCommands.RunAsync(args, app.Services);
 }
 
+// Behind a reverse proxy the connection's address is the proxy's, so the per-client rate limit
+// would be one shared bucket. Only on when configured; the defaults trust loopback proxies only.
+if (app.Configuration.GetValue<bool>("ForwardedHeaders:Enabled"))
+{
+    app.UseForwardedHeaders(new ForwardedHeadersOptions
+    {
+        ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor
+            | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto,
+        ForwardLimit = 1,
+    });
+}
+
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 app.UseDefaultFiles();
