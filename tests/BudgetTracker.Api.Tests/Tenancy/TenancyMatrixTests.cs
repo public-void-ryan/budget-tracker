@@ -95,6 +95,9 @@ public class TenancyMatrixTests(PostgresFixture fixture) : ApiTest(fixture)
         yield return new("create a rule assigning their category", HttpMethod.Post, "/rules", new { pattern = "attack", matchType = "Contains", categoryId = owner.Category.Id }, refused, "category.invalid");
         yield return new("point my rule at their category", HttpMethod.Put, $"/rules/{attacker.Rule.Id}", new { pattern = "attack", matchType = "Contains", categoryId = owner.Category.Id }, refused, "category.invalid");
         yield return new("reorder including their rule", HttpMethod.Post, "/rules/order", new { ids = new[] { attacker.Rule.Id, owner.Rule.Id } }, refused, "order.mismatch");
+        yield return new("budget their category", HttpMethod.Put, $"/budgets/2026-11/{owner.Category.Id}", new { amount = 1m }, notFound, "not_found");
+        yield return new("replace the budget on their category", HttpMethod.Put, $"/budgets/2026-10/{owner.Category.Id}", new { amount = 1m }, notFound, "not_found");
+        yield return new("delete the budget on their category", HttpMethod.Delete, $"/budgets/2026-10/{owner.Category.Id}", null, notFound, "not_found");
         yield return new("read their category", HttpMethod.Get, $"/categories/{owner.Category.Id}", null, notFound, "not_found");
         yield return new("rename their category", HttpMethod.Put, $"/categories/{owner.Category.Id}", new { name = "x" }, notFound, "not_found");
         yield return new("delete their category", HttpMethod.Delete, $"/categories/{owner.Category.Id}", null, notFound, "not_found");
@@ -156,6 +159,7 @@ public class TenancyMatrixTests(PostgresFixture fixture) : ApiTest(fixture)
             "/accounts?includeArchived=true", "/categories", "/transactions",
             $"/transactions?accountId={owner.Account.Id}", $"/transactions?categoryId={owner.Category.Id}",
             "/rules", $"/rules/match?description={owner.Rule.Pattern}",
+            "/budgets?month=2026-10", "/budgets/summary?month=2026-10",
         })
         {
             var text = await (await SendAsync(HttpMethod.Get, url, attacker.Token)).Content.ReadAsStringAsync();
@@ -203,5 +207,46 @@ public class TenancyMatrixTests(PostgresFixture fixture) : ApiTest(fixture)
         Assert.Equal(
             [alice.Transaction.Id],
             transactions.GetProperty("items").EnumerateArray().Select(t => t.GetProperty("id").GetGuid()).ToArray());
+    }
+
+    [Fact]
+    public async Task Applying_my_rules_never_touches_someone_elses_transactions()
+    {
+        var alice = await SeedAsync("alice");
+        var bob = await SeedAsync("bob");
+        var bobsBlank = new Transaction
+        {
+            UserId = bob.Transaction.UserId, AccountId = bob.Account.Id, PostedOn = new DateOnly(2026, 10, 2),
+            Amount = -3m, Description = "shared-merchant",
+        };
+        var alicesBlank = new Transaction
+        {
+            UserId = alice.Transaction.UserId, AccountId = alice.Account.Id, PostedOn = new DateOnly(2026, 10, 2),
+            Amount = -3m, Description = "shared-merchant",
+        };
+        Db.AddRange(bobsBlank, alicesBlank);
+        await Db.SaveChangesAsync();
+        var rule = await SendAsync(HttpMethod.Post, "/rules", alice.Token, new { pattern = "shared-merchant", matchType = "Equals", categoryId = alice.Category.Id });
+        Assert.Equal(HttpStatusCode.Created, rule.StatusCode);
+
+        var applied = await SendAsync(HttpMethod.Post, "/rules/apply", alice.Token);
+
+        Assert.Equal(HttpStatusCode.OK, applied.StatusCode);
+        Assert.Equal(alice.Category.Id, (await Db.Transactions.AsNoTracking().SingleAsync(t => t.Id == alicesBlank.Id)).CategoryId);
+        Assert.Null((await Db.Transactions.AsNoTracking().SingleAsync(t => t.Id == bobsBlank.Id)).CategoryId);
+    }
+
+    [Fact]
+    public async Task Copying_budgets_only_copies_my_own()
+    {
+        var alice = await SeedAsync("alice");
+        var bob = await SeedAsync("bob");
+
+        var response = await SendAsync(HttpMethod.Post, "/budgets/copy?from=2026-10&to=2026-11", alice.Token);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var november = await Db.Budgets.AsNoTracking().Where(b => b.Month == new DateOnly(2026, 11, 1)).ToListAsync();
+        Assert.Equal([alice.Category.Id], november.Select(b => b.CategoryId).ToArray());
+        Assert.DoesNotContain(november, b => b.CategoryId == bob.Category.Id);
     }
 }
