@@ -2,7 +2,7 @@
 
 A personal-finance API: import bank transactions, categorize them automatically, and track spending against monthly budgets.
 
-**Status:** milestone 5 of 8 complete. The data model, authentication, the core CRUD API and CSV import are done and tested: you can register, log in, manage categories and accounts, add and page through transactions, and import a bank's CSV export, previewing it first and re-uploading overlapping statements without creating duplicates. Categorization rules and budgets come next; see the [roadmap](#roadmap).
+**Status:** milestone 6 of 8 complete. The API is feature-complete: you can register, log in, manage categories and accounts, add and page through transactions, import a bank's CSV export (previewing it first, re-uploading overlapping statements safely), categorize automatically with ordered rules, set monthly budgets and see budget against actual spending. The web UI and the deployment come next; see the [roadmap](#roadmap).
 
 ## Planned scope
 
@@ -50,6 +50,22 @@ Everything except register, login and health needs `Authorization: Bearer <token
 | `GET /transactions` | 200 with `{ items, nextCursor }`; [filters and pagination](#pagination) |
 | `POST /transactions` | 201, 400, 409 (account archived), 422 (account or category missing or not yours) |
 | `GET`, `PUT`, `DELETE /transactions/{id}` | 200 or 204, 400, 404, 409, 422 |
+
+### Rules, budgets and the summary
+
+| Endpoint | Responses |
+| --- | --- |
+| `GET /rules` | 200, in the order they are tried |
+| `POST /rules` | 201 (added last), 400, 409 (limit reached), 422 (category missing or not yours) |
+| `GET`, `PUT`, `DELETE /rules/{id}` | 200 or 204, 400, 404, 422 |
+| `POST /rules/order` | 200; send every rule id once, in the new order; 422 if the list is not exactly your rules |
+| `GET /rules/match?description=` | 200; which rule would win for that text, and why |
+| `POST /rules/apply` | 200 (`?dryRun=true` previews); [applying rules](#categorization-rules) |
+| `GET /budgets?month=2026-10` | 200 |
+| `PUT /budgets/{month}/{categoryId}` | 201 created or 200 replaced, 400, 404, 422; amount is not negative, zero is allowed |
+| `DELETE /budgets/{month}/{categoryId}` | 204, 400, 404 |
+| `POST /budgets/copy?from=&to=` | 200; copies budgets the target month lacks, never overwrites |
+| `GET /budgets/summary?month=2026-10` | 200; [budget against actual](#budget-against-actual), 400 |
 
 Errors are [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) problem responses with a stable `code` you can switch on. Validation errors add a per-field `errors` map and a matching `codes` map:
 
@@ -140,10 +156,12 @@ erDiagram
     users ||--o{ categories : owns
     users ||--o{ transactions : owns
     users ||--o{ budgets : owns
+    users ||--o{ rules : owns
     users ||--o{ sessions : "logs in with"
     accounts ||--o{ transactions : contains
     categories |o--o{ transactions : "classifies (optional)"
     categories ||--o{ budgets : "is budgeted by"
+    categories |o--o{ rules : "assigned by"
 
     users {
         uuid id PK
@@ -184,6 +202,15 @@ erDiagram
         smallint import_seq "null if entered by hand"
         timestamptz created_at
     }
+    rules {
+        uuid id PK
+        uuid user_id FK
+        uuid category_id FK "nullable"
+        int position "order tried, from 0"
+        varchar match_type "Contains, StartsWith or Equals"
+        varchar pattern "literal text, not blank"
+        bool mark_transfer
+    }
     budgets {
         uuid id PK
         uuid user_id FK
@@ -197,7 +224,7 @@ erDiagram
 
 ## Design decisions
 
-Each of these is enforced by the database or the application and covered by a test. Where a column exists ahead of its feature (`is_transfer`), the milestone that uses it is noted.
+Each of these is enforced by the database or the application and covered by a test.
 
 ### Data
 
@@ -207,7 +234,7 @@ Each of these is enforced by the database or the application and covered by a te
 
 **Re-importing a file is safe, and identical rows survive.** CSV rows are identified by a content hash. Hashing alone would treat two real $4.50 coffees on the same day as duplicates and silently drop one, so each row also gets an occurrence number (`import_seq`) within its file. The unique key is `(account_id, import_hash, import_seq)`: re-importing a file is rejected, and a genuine second coffee is kept. Hand-entered transactions have no hash and are never deduplicated. (How the import uses this is described under [Importing](#importing).)
 
-**Transfers don't count as spending.** Paying a credit card from checking appears as two transactions in real bank data. Counting the checking side as spending would double-count everything the card paid for, so `is_transfer` excludes a transaction from category spending and budgets. Pairing the two legs of a transfer is the more complete model, but it needs matching logic; it is a possible upgrade, not part of this scope. (Milestone 6.)
+**Transfers don't count as spending.** Paying a credit card from checking appears as two transactions in real bank data. Counting the checking side as spending would double-count everything the card paid for, so `is_transfer` excludes a transaction from category spending and budgets. Pairing the two legs of a transfer is the more complete model, but it needs matching logic; it is a possible upgrade, not part of this scope. Rules can mark a transaction as a transfer, and the budget summary leaves transfers out.
 
 **One sign rule for stored amounts.** Banks disagree: many credit card exports show a purchase as a positive number. Rather than infer or ask on every upload, `accounts.invert_sign` is set once per account and import flips the sign, so stored data always follows one rule. The import preview shows the stored amount next to the file's amount for exactly that reason, since a wrong sign is a silent error.
 
@@ -257,6 +284,28 @@ Each of these is enforced by the database or the application and covered by a te
 
 **Hostile or sloppy input is bounded.** The 5 MB limit is enforced while reading, not only from the declared `Content-Length`, which a chunked upload does not have and a client can misstate. The reader is a small class tested on its own with streams that report no length, because the in-memory test server did not exercise that path. The row cap, the strict UTF-8 requirement and the strict amount and date parsing follow the same rule as the rest of the API: refuse and explain rather than guess.
 
+### Categorization rules
+
+**First match wins, and only the first.** Rules are tried in position order and the first one that matches supplies the whole action (a category, a transfer mark, or both). Merging several matching rules would make the result depend on a combination nobody can see; one winner can be explained, and `GET /rules/match` shows which rule it is and why.
+
+**Patterns are literal text.** A rule is Contains, StartsWith or Equals on the description, compared after the same normalization the import uses (trimmed, Unicode-composed, invariant-lowercase) plus collapsed runs of whitespace, since bank descriptions are padded unpredictably. There is no regex: a user-supplied regex is a denial-of-service surface and a support burden, and literal matching covers the real cases. A database check rejects blank patterns, so a rule cannot match everything by accident.
+
+**Rules fill blanks and never override.** A rule applies only to a transaction with no category that is not a transfer, on an account that is not archived. It never changes a category someone chose. The price is a deliberate cut: there is no "re-apply after I edit a rule", because that would need provenance (was this category set by a rule or by a person?) on every transaction.
+
+**When rules run.** On import, for new rows only (duplicates are never touched), and on demand with `POST /rules/apply`, which works in batches and reports counts per rule; `?dryRun=true` shows what it would do. They do not run when you create a transaction by hand: if you left the category empty, that was your choice. The "still blank" condition is repeated inside the update itself, so a category set between the read and the write is not overwritten.
+
+**Rule creation, reordering and applying are serialized per user** by locking the user's row for the duration of the transaction, so two reorders, or an apply during a reorder, cannot interleave and the rule limit cannot be exceeded by racing creates. Reordering must name every rule exactly once; a stale list is refused rather than half applied.
+
+### Budgets
+
+**A budget is a planned spending amount for one category in one month.** Setting it is an upsert, `PUT /budgets/{yyyy-MM}/{categoryId}`, so the address is the identity and a retry is harmless. It is one `INSERT … ON CONFLICT DO UPDATE … RETURNING (xmax = 0)`: `xmax` is zero only for a freshly inserted row, which tells 201 from 200 in a single atomic statement. Months are strict `yyyy-MM`; anything else is a 400, not a guess. Copying a month adds the budgets the target lacks and never overwrites, under the same per-user row lock.
+
+### Budget against actual
+
+**Spent is net outflow.** For a category and month it is the negated sum of its transactions: a refund reduces it, and an income category shows a negative number. Transfers are excluded. Transactions on archived accounts still count, since archiving hides an account without erasing its history. Uncategorized spending gets its own figure, and `totals.spent` equals every category row plus that figure, which a test cross-checks against the transaction list for the same range.
+
+**Remaining and over are only defined with a budget.** A category with spending but no budget has `budgeted` and `remaining` null and is never "over". Exactly on budget is not over. A category appears if it has a budget or any activity that month. The month is a half-open date range, so the query uses the same `(user_id, posted_on, id)` index as the listing (a planner test checks it), and month ends, leap days and December are tested.
+
 ### Testing
 
 **Tests run against real PostgreSQL.** The guarantees above are database behavior (composite keys, check constraints, partial uniqueness, row locks), and EF Core's in-memory and SQLite providers ignore or differ on most of them. The tests start one PostgreSQL container, migrate a template database once, and give every test its own copy, so isolation is cheap. API tests drive the real application over HTTP against that database. Most authenticated tests insert a session row directly and send its token, so they skip the deliberately slow password hashing but still go through the real authentication handler; the auth behavior itself is tested once, thoroughly, through the real endpoints. One test also fails if the model changes without a matching migration.
@@ -269,10 +318,12 @@ Each of these is enforced by the database or the application and covered by a te
 - **Registration reveals taken emails** (see above); unavoidable without verification.
 - **`DELETE /me` carries a JSON body.** Some clients and proxies drop request bodies on DELETE; the result is a clean 400, not data loss.
 - **The rate limit keys on the client address.** Behind a reverse proxy that is the proxy's address unless forwarded headers are configured, which is a deployment step (milestone 8).
-- **Import has no history or undo,** reads UTF-8 only (other encodings are refused, not guessed), expects a comma delimiter, and does not categorize: rules are the next milestone. OFX and QIF are not supported.
+- **Import has no history or undo,** reads UTF-8 only (other encodings are refused, not guessed), expects a comma delimiter, and categorizes only through rules (see above). OFX and QIF are not supported.
 - **Browser token storage is undecided** until the UI exists (milestone 7); today the token is sent in the `Authorization` header.
 - **Category and account names are case-sensitive:** "Food" and "food" can coexist, as the schema defines. Case-insensitive uniqueness would need a schema change.
-- **No optimistic concurrency, bulk operations, text search or "uncategorized only" filter.** The categorization milestone will add what it needs.
+- **Rules are deliberately small:** no regex, no conditions on amount or account, no re-categorizing after a rule edit (no provenance), no auto-categorizing of manually entered transactions.
+- **Budgets are per category per month,** with no rollover, no budget for a category group, and no multi-currency.
+- **No optimistic concurrency, bulk operations, text search or "uncategorized only" filter.**
 - **Upgrade paths:** Argon2id for password hashing, a breached-password check against the Have I Been Pwned range API, sliding sessions, and a `/v2` route prefix if a second API consumer ever appears.
 
 ## Develop
@@ -310,6 +361,6 @@ The common-password check uses passwords of 12 or more characters from the Pwdb 
 3. ~~Auth~~
 4. ~~Core CRUD API~~
 5. ~~CSV import with dedup~~
-6. Categorization rules and budgets ← next
-7. UI and E2E tests
+6. ~~Categorization rules and budgets~~
+7. UI and E2E tests ← next
 8. Deploy and write-up
