@@ -18,7 +18,12 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IPasswordService, PasswordService>();
 builder.Services.AddScoped<SessionService>();
 builder.Services.Configure<RegistrationOptions>(builder.Configuration.GetSection(RegistrationOptions.Section));
-builder.Services.Configure<AuthSessionOptions>(builder.Configuration.GetSection(AuthSessionOptions.Section));
+builder.Services
+    .AddOptions<AuthSessionOptions>()
+    .Bind(builder.Configuration.GetSection(AuthSessionOptions.Section))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+builder.Services.AddHostedService<ExpiredSessionPurger>();
 builder.Services.Configure<AuthRateLimitOptions>(builder.Configuration.GetSection(AuthRateLimitOptions.Section));
 
 builder.Services.AddProblemDetails();

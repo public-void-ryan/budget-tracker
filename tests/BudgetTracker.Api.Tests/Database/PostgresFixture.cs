@@ -53,9 +53,15 @@ public sealed class PostgresFixture : IAsyncLifetime
         return new BudgetDbContext(options);
     }
 
+    // Pooling is off: every test gets its own database, so pooled connections would never be
+    // reused, and idle ones left behind by a few hundred tests exhaust the server's
+    // max_connections. Tests run one at a time, so this costs a few milliseconds per query.
     private string ConnectionStringFor(string database) =>
-        new NpgsqlConnectionStringBuilder(_container.GetConnectionString()) { Database = database }
-            .ConnectionString;
+        new NpgsqlConnectionStringBuilder(_container.GetConnectionString())
+        {
+            Database = database,
+            Pooling = false,
+        }.ConnectionString;
 
     private async Task ExecuteAdminAsync(string sql)
     {

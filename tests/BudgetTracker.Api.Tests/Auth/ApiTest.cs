@@ -6,6 +6,8 @@ using BudgetTracker.Api.Auth;
 using BudgetTracker.Api.Data;
 using BudgetTracker.Api.Data.Entities;
 using BudgetTracker.Api.Tests.Database;
+using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 
 namespace BudgetTracker.Api.Tests.Auth;
 
@@ -20,6 +22,16 @@ public abstract class ApiTest(PostgresFixture fixture) : IAsyncLifetime
 
     private ApiFactory _factory = null!;
 
+    /// <summary>
+    /// The application's clock, frozen until a test advances it. It starts on a whole second so
+    /// timestamps survive the database's microsecond precision exactly.
+    /// </summary>
+    protected FakeTimeProvider Clock { get; } =
+        new(DateTimeOffset.UnixEpoch.AddSeconds(DateTimeOffset.UtcNow.ToUnixTimeSeconds()));
+
+    protected string ConnectionString { get; private set; } = null!;
+    protected PostgresFixture Fixture => fixture;
+
     protected HttpClient Client { get; private set; } = null!;
     protected BudgetDbContext Db { get; private set; } = null!;
 
@@ -28,9 +40,9 @@ public abstract class ApiTest(PostgresFixture fixture) : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        var connectionString = await fixture.CreateDatabaseConnectionStringAsync();
-        Db = fixture.CreateContext(connectionString);
-        _factory = new ApiFactory(connectionString, Settings);
+        ConnectionString = await fixture.CreateDatabaseConnectionStringAsync();
+        Db = fixture.CreateContext(ConnectionString);
+        _factory = new ApiFactory(ConnectionString, Settings, Clock);
         Client = _factory.CreateClient();
     }
 
@@ -73,7 +85,7 @@ public abstract class ApiTest(PostgresFixture fixture) : IAsyncLifetime
         Db.Add(user);
 
         var (token, hash) = SessionTokens.Generate();
-        var created = DateTimeOffset.UtcNow - (age ?? TimeSpan.Zero);
+        var created = Clock.GetUtcNow() - (age ?? TimeSpan.Zero);
         Db.Add(new Session
         {
             UserId = user.Id,
@@ -84,6 +96,9 @@ public abstract class ApiTest(PostgresFixture fixture) : IAsyncLifetime
         await Db.SaveChangesAsync();
         return (user, token);
     }
+
+    protected SessionService NewSessionService(BudgetDbContext context, AuthSessionOptions? sessionOptions = null) =>
+        new(context, Clock, Options.Create(sessionOptions ?? new AuthSessionOptions()));
 
     protected HttpRequestMessage Get(string url, string? token = null, string scheme = "Bearer")
     {

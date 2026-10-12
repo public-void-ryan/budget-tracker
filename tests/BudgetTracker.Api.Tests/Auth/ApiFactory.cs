@@ -1,12 +1,16 @@
 using BudgetTracker.Api.Tests.Database;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace BudgetTracker.Api.Tests.Auth;
 
 /// <summary>The real application, pointed at one test's own database.</summary>
-public sealed class ApiFactory(string connectionString, IReadOnlyDictionary<string, string?> settings)
+public sealed class ApiFactory(
+    string connectionString, IReadOnlyDictionary<string, string?> settings, TimeProvider time)
     : WebApplicationFactory<Program>
 {
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -28,5 +32,12 @@ public sealed class ApiFactory(string connectionString, IReadOnlyDictionary<stri
         }
 
         builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(values));
+
+        // Tests control time: session expiry, the purge interval and the cap all read this clock.
+        builder.ConfigureTestServices(services =>
+        {
+            services.RemoveAll<TimeProvider>();
+            services.AddSingleton(time);
+        });
     }
 }

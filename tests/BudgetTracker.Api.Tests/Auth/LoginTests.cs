@@ -45,7 +45,7 @@ public class LoginTests(PostgresFixture fixture) : ApiTest(fixture)
         var response = await PostAsync("/auth/login", new { email = "ryan@example.com", password = GoodPassword });
 
         var expiresAt = (await ReadJsonAsync(response)).GetProperty("expiresAt").GetDateTimeOffset();
-        Assert.InRange(expiresAt, DateTimeOffset.UtcNow.AddDays(14).AddMinutes(-1), DateTimeOffset.UtcNow.AddDays(14).AddMinutes(1));
+        Assert.Equal(Clock.GetUtcNow().AddDays(14), expiresAt);
         var session = await Db.Sessions.AsNoTracking().SingleAsync();
         Assert.Equal(expiresAt.ToUnixTimeMilliseconds(), session.ExpiresAt.ToUnixTimeMilliseconds());
     }
