@@ -9,6 +9,7 @@ using BudgetTracker.Api.Transactions;
 using BudgetTracker.Api.Data;
 using BudgetTracker.Api.Imports;
 using BudgetTracker.Api.Rules;
+using BudgetTracker.Api.Ui;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
@@ -105,6 +106,8 @@ var app = builder.Build();
 
 app.UseExceptionHandler();
 app.UseStatusCodePages();
+app.UseDefaultFiles();
+app.UseStaticFiles(new StaticFileOptions { OnPrepareResponse = UiSecurityHeaders.Apply });
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
