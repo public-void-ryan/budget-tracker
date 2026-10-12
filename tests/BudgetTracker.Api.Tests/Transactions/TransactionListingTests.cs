@@ -65,8 +65,8 @@ public class TransactionListingTests(PostgresFixture fixture) : ApiTest(fixture)
         page.GetProperty("nextCursor").ValueKind == JsonValueKind.Null ? null : page.GetProperty("nextCursor").GetString();
 
     /// <summary>
-    /// The newest-first order as the DATABASE sorts it. .NET and PostgreSQL order UUIDs
-    /// differently, so sorting in C# would not be a trustworthy expectation for the tie-break.
+    /// The newest-first order as the DATABASE sorts it. Asking the database, rather than sorting
+    /// in C#, keeps the expectation independent of the code under test.
     /// </summary>
     private async Task<Guid[]> ExpectedOrderAsync(User user) =>
         [.. await Db.Transactions
