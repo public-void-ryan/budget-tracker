@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -27,6 +28,11 @@ builder.Services.AddHostedService<ExpiredSessionPurger>();
 builder.Services.Configure<AuthRateLimitOptions>(builder.Configuration.GetSection(AuthRateLimitOptions.Section));
 
 builder.Services.AddProblemDetails();
+builder.Services.AddOpenApi(options =>
+{
+    options.AddDocumentTransformer<BearerSchemeTransformer>();
+    options.AddOperationTransformer<BearerRequirementTransformer>();
+});
 builder.Services.AddExceptionHandler<ConstraintViolationHandler>();
 
 builder.Services
@@ -84,8 +90,19 @@ app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+app.MapGet("/health", () => Results.Ok(new { status = "ok" }))
+    .WithTags("Health")
+    .WithName("Health")
+    .WithSummary("Liveness check.");
 app.MapAuthEndpoints();
+
+// Off unless switched on: appsettings.Development.json enables it for local work. Read from
+// app.Configuration (after Build) so every configuration source has been applied.
+if (app.Configuration.GetValue<bool>("Documentation:Enabled"))
+{
+    app.MapOpenApi();
+    app.MapScalarApiReference();
+}
 
 app.Run();
 

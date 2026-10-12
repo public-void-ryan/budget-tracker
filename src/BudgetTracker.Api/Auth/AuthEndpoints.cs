@@ -27,16 +27,62 @@ public static class AuthEndpoints
 
     public static IEndpointRouteBuilder MapAuthEndpoints(this IEndpointRouteBuilder app)
     {
-        var auth = app.MapGroup("/auth");
-        auth.MapPost("/register", Register).RequireRateLimiting(RateLimitPolicy);
-        auth.MapPost("/login", Login).RequireRateLimiting(RateLimitPolicy);
-        auth.MapPost("/logout", Logout).RequireAuthorization();
+        var auth = app.MapGroup("/auth").WithTags("Auth");
 
-        app.MapGet("/me", Me).RequireAuthorization();
+        auth.MapPost("/register", Register)
+            .RequireRateLimiting(RateLimitPolicy)
+            .WithName("Register")
+            .WithSummary("Create an account.")
+            .WithDescription("404 when registration is switched off (the public demo). 409 if the email is taken.")
+            .Produces<UserResponse>(StatusCodes.Status201Created)
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests);
+
+        auth.MapPost("/login", Login)
+            .RequireRateLimiting(RateLimitPolicy)
+            .WithName("Login")
+            .WithSummary("Log in and receive a bearer token.")
+            .WithDescription("An unknown email and a wrong password return the same 401.")
+            .Produces<LoginResponse>()
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests);
+
+        auth.MapPost("/logout", Logout)
+            .RequireAuthorization()
+            .WithName("Logout")
+            .WithSummary("End the session this token belongs to.")
+            .Produces(StatusCodes.Status204NoContent)
+            .ProducesProblem(StatusCodes.Status401Unauthorized);
+
+        var me = app.MapGroup("/me").WithTags("Account");
+
+        me.MapGet("", Me)
+            .RequireAuthorization()
+            .WithName("GetMe")
+            .WithSummary("The authenticated user.")
+            .Produces<UserResponse>()
+            .ProducesProblem(StatusCodes.Status401Unauthorized);
 
         // Shares the login rate-limit budget: re-entering the password makes this a password
         // oracle, and a stolen session token must not buy unlimited guesses.
-        app.MapDelete("/me", DeleteMe).RequireAuthorization().RequireRateLimiting(RateLimitPolicy);
+        me.MapDelete("", DeleteMe)
+            .RequireAuthorization()
+            .RequireRateLimiting(RateLimitPolicy)
+            .WithName("DeleteMe")
+            .WithSummary("Permanently delete the account and everything it owns.")
+            .WithDescription(
+                "Requires the password in a JSON body. Removes accounts, categories, transactions, "
+                + "budgets and every session. 403 if the password is wrong. Some clients and proxies "
+                + "drop request bodies on DELETE, which fails here as a 400.")
+            .Produces(StatusCodes.Status204NoContent)
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests);
+
         return app;
     }
 
