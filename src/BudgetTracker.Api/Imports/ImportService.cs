@@ -1,14 +1,24 @@
 using BudgetTracker.Api.Data;
 using BudgetTracker.Api.Data.Entities;
+using BudgetTracker.Api.Rules;
 using Microsoft.EntityFrameworkCore;
 
 namespace BudgetTracker.Api.Imports;
 
 /// <param name="Amount">What is (or would be) stored: the file's amount with the account's sign setting applied.</param>
 /// <param name="FileAmount">Exactly what the file said.</param>
+/// <param name="CategoryId">The category the first matching rule assigns; null for duplicates and unmatched rows.</param>
+/// <param name="IsTransfer">Whether the first matching rule marks it as a transfer.</param>
 /// <param name="Status">"new" or "duplicate".</param>
 public sealed record ImportRowResult(
-    int Row, DateOnly PostedOn, string Description, decimal Amount, decimal FileAmount, string Status);
+    int Row,
+    DateOnly PostedOn,
+    string Description,
+    decimal Amount,
+    decimal FileAmount,
+    Guid? CategoryId,
+    bool IsTransfer,
+    string Status);
 
 public sealed record ImportSummary(
     bool DryRun,
@@ -17,6 +27,8 @@ public sealed record ImportSummary(
     int New,
     int Duplicates,
     int Imported,
+    int Categorized,
+    int MarkedAsTransfer,
     IReadOnlyList<ImportRowResult> Rows);
 
 public enum ImportOutcome
@@ -42,10 +54,19 @@ public sealed class ImportService(BudgetDbContext db)
         if (dryRun)
         {
             var account = await LoadAccountAsync(userId, accountId, ct);
-            return account is null
-                ? new ImportResult(ImportOutcome.AccountNotFound)
-                : Refused(account) ?? new ImportResult(
-                    ImportOutcome.Done, Summarize(account, await ClassifyAsync(accountId, numbered, ct), dryRun: true, imported: 0));
+            if (account is null)
+            {
+                return new ImportResult(ImportOutcome.AccountNotFound);
+            }
+
+            if (Refused(account) is { } refusal)
+            {
+                return refusal;
+            }
+
+            var previewed = await ClassifyAsync(accountId, numbered, ct);
+            var previewActions = await ActionsAsync(userId, previewed, ct);
+            return new ImportResult(ImportOutcome.Done, Summarize(account, previewed, previewActions, dryRun: true, imported: 0));
         }
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
@@ -71,19 +92,25 @@ public sealed class ImportService(BudgetDbContext db)
         }
 
         var classified = await ClassifyAsync(accountId, numbered, ct);
+        var actions = await ActionsAsync(userId, classified, ct);
         var factor = locked.InvertSign ? -1m : 1m;
 
+        // Rules fill in the category and transfer mark of rows that are new. Rows already stored are
+        // never touched, so changing the rules later cannot rewrite what an earlier import did.
         var created = classified
-            .Where(c => c.Status == RowStatus.New)
-            .Select(c => new Transaction
+            .Select((c, i) => (Row: c, Action: actions[i]))
+            .Where(x => x.Row.Status == RowStatus.New)
+            .Select(x => new Transaction
             {
                 UserId = userId,
                 AccountId = accountId,
-                PostedOn = c.Hashed.Row.Date,
-                Amount = c.Hashed.Row.Amount * factor,
-                Description = c.Hashed.Row.Description,
-                ImportHash = c.Hashed.Hash,
-                ImportSeq = c.Hashed.Sequence,
+                CategoryId = x.Action?.CategoryId,
+                PostedOn = x.Row.Hashed.Row.Date,
+                Amount = x.Row.Hashed.Row.Amount * factor,
+                Description = x.Row.Hashed.Row.Description,
+                IsTransfer = x.Action?.MarkTransfer ?? false,
+                ImportHash = x.Row.Hashed.Hash,
+                ImportSeq = x.Row.Hashed.Sequence,
             })
             .ToList();
 
@@ -91,7 +118,7 @@ public sealed class ImportService(BudgetDbContext db)
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
 
-        return new ImportResult(ImportOutcome.Done, Summarize(locked, classified, dryRun: false, imported: created.Count));
+        return new ImportResult(ImportOutcome.Done, Summarize(locked, classified, actions, dryRun: false, imported: created.Count));
     }
 
     private Task<Account?> LoadAccountAsync(Guid userId, Guid accountId, CancellationToken ct) =>
@@ -119,16 +146,36 @@ public sealed class ImportService(BudgetDbContext db)
         return ImportDedup.Classify(numbered, existing);
     }
 
-    private static ImportSummary Summarize(Account account, IReadOnlyList<ClassifiedRow> classified, bool dryRun, int imported)
+    /// <summary>
+    /// The rule that claims each new row, aligned with <paramref name="classified"/>; null for
+    /// duplicates (never touched) and for rows no rule matches.
+    /// </summary>
+    private async Task<IReadOnlyList<RuleDefinition?>> ActionsAsync(
+        Guid userId, IReadOnlyList<ClassifiedRow> classified, CancellationToken ct)
+    {
+        var definitions = await db.Rules
+            .AsNoTracking()
+            .Where(r => r.UserId == userId)
+            .Select(r => new RuleDefinition(r.Id, r.Position, r.MatchType, r.Pattern, r.CategoryId, r.MarkTransfer))
+            .ToListAsync(ct);
+        var matcher = new RuleMatcher(definitions);
+
+        return [.. classified.Select(c => c.Status == RowStatus.New ? matcher.FirstMatch(c.Hashed.Row.Description) : null)];
+    }
+
+    private static ImportSummary Summarize(
+        Account account, IReadOnlyList<ClassifiedRow> classified, IReadOnlyList<RuleDefinition?> actions, bool dryRun, int imported)
     {
         var factor = account.InvertSign ? -1m : 1m;
         var rows = classified
-            .Select(c => new ImportRowResult(
+            .Select((c, i) => new ImportRowResult(
                 c.Hashed.Row.Row,
                 c.Hashed.Row.Date,
                 c.Hashed.Row.Description,
                 c.Hashed.Row.Amount * factor,
                 c.Hashed.Row.Amount,
+                actions[i]?.CategoryId,
+                actions[i]?.MarkTransfer ?? false,
                 c.Status == RowStatus.New ? "new" : "duplicate"))
             .ToList();
 
@@ -139,6 +186,8 @@ public sealed class ImportService(BudgetDbContext db)
             rows.Count(r => r.Status == "new"),
             rows.Count(r => r.Status == "duplicate"),
             imported,
+            rows.Count(r => r.CategoryId is not null),
+            rows.Count(r => r.IsTransfer),
             rows);
     }
 }

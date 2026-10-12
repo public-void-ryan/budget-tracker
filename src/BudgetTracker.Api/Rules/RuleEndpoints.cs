@@ -50,6 +50,16 @@ public static class RuleEndpoints
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
 
+        rules.MapPost("/apply", Apply)
+            .WithName("ApplyRules")
+            .WithSummary("Apply your rules to transactions you already have.")
+            .WithDescription(
+                "Fills in blanks only: a transaction that already has a category, or is marked as a transfer, is "
+                + "never changed. Archived accounts are skipped and counted. With dryRun=true nothing is written and "
+                + "the response says what would happen. A real run is all or nothing.")
+            .Produces<ApplyResult>()
+            .ProducesProblem(StatusCodes.Status401Unauthorized);
+
         rules.MapGet("/match", Match)
             .WithName("MatchRule")
             .WithSummary("Which rule would claim this description?")
@@ -251,6 +261,10 @@ public static class RuleEndpoints
 
         return Results.Ok(requested.Select(id => ToResponse(byId[id])));
     }
+
+    private static async Task<IResult> Apply(
+        bool? dryRun, ClaimsPrincipal user, RuleApplier applier, CancellationToken ct) =>
+        Results.Ok(await applier.ApplyAsync(user.GetId(), dryRun == true, ct));
 
     private static async Task<IResult> Match(
         string? description, ClaimsPrincipal user, BudgetDbContext db, CancellationToken ct)

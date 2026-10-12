@@ -25,6 +25,7 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IPasswordService, PasswordService>();
 builder.Services.AddScoped<SessionService>();
 builder.Services.AddScoped<ImportService>();
+builder.Services.AddScoped<RuleApplier>();
 builder.Services.Configure<RegistrationOptions>(builder.Configuration.GetSection(RegistrationOptions.Section));
 builder.Services
     .AddOptions<AuthSessionOptions>()

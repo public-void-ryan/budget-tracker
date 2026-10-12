@@ -116,11 +116,11 @@ public class ImportEndpointTests(PostgresFixture fixture) : ApiTest(fixture)
         var summary = await SummaryAsync(await ImportAsync(token, account.Id, Csv("2026-10-01,Coffee,-4.50"), "?dryRun=true"));
 
         Assert.Equal(
-            ["dryRun", "duplicates", "imported", "new", "rows", "signInverted", "total"],
+            ["categorized", "dryRun", "duplicates", "imported", "markedAsTransfer", "new", "rows", "signInverted", "total"],
             summary.EnumerateObject().Select(p => p.Name).Order(StringComparer.Ordinal).ToArray());
         var row = summary.GetProperty("rows")[0];
         Assert.Equal(
-            ["amount", "description", "fileAmount", "postedOn", "row", "status"],
+            ["amount", "categoryId", "description", "fileAmount", "isTransfer", "postedOn", "row", "status"],
             row.EnumerateObject().Select(p => p.Name).Order(StringComparer.Ordinal).ToArray());
         Assert.Equal("2026-10-01", row.GetProperty("postedOn").GetString());
     }

@@ -58,6 +58,7 @@ public class ApiDocumentationTests(PostgresFixture fixture) : ApiTest(fixture)
                 "POST /auth/register",
                 "POST /categories",
                 "POST /rules",
+                "POST /rules/apply",
                 "POST /rules/order",
                 "POST /transactions",
                 "PUT /accounts/{id}",
@@ -100,6 +101,7 @@ public class ApiDocumentationTests(PostgresFixture fixture) : ApiTest(fixture)
     [InlineData("/me", "delete")]
     [InlineData("/rules", "get")]
     [InlineData("/rules", "post")]
+    [InlineData("/rules/apply", "post")]
     [InlineData("/rules/match", "get")]
     [InlineData("/rules/order", "post")]
     [InlineData("/rules/{id}", "get")]
