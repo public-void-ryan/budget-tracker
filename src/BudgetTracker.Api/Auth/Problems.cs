@@ -34,6 +34,11 @@ public static class Problems
         title: "Incorrect password.",
         extensions: new Dictionary<string, object?> { ["code"] = "auth.incorrect_password" });
 
+    public static IResult Conflict(string code, string title) => Results.Problem(
+        statusCode: StatusCodes.Status409Conflict,
+        title: title,
+        extensions: new Dictionary<string, object?> { ["code"] = code });
+
     /// <summary>Also what another user's resource looks like, so ids cannot be used to probe.</summary>
     public static IResult NotFound() => Results.Problem(
         statusCode: StatusCodes.Status404NotFound,

@@ -34,16 +34,22 @@ public class ApiDocumentationTests(PostgresFixture fixture) : ApiTest(fixture)
 
         Assert.Equal(
             [
+                "DELETE /accounts/{id}",
                 "DELETE /categories/{id}",
                 "DELETE /me",
+                "GET /accounts",
+                "GET /accounts/{id}",
                 "GET /categories",
                 "GET /categories/{id}",
                 "GET /health",
                 "GET /me",
+                "POST /accounts",
+                "POST /accounts/{id}/unarchive",
                 "POST /auth/login",
                 "POST /auth/logout",
                 "POST /auth/register",
                 "POST /categories",
+                "PUT /accounts/{id}",
                 "PUT /categories/{id}",
             ],
             operations);
@@ -79,6 +85,12 @@ public class ApiDocumentationTests(PostgresFixture fixture) : ApiTest(fixture)
     [InlineData("/auth/logout", "post")]
     [InlineData("/me", "get")]
     [InlineData("/me", "delete")]
+    [InlineData("/accounts", "get")]
+    [InlineData("/accounts", "post")]
+    [InlineData("/accounts/{id}", "get")]
+    [InlineData("/accounts/{id}", "put")]
+    [InlineData("/accounts/{id}", "delete")]
+    [InlineData("/accounts/{id}/unarchive", "post")]
     [InlineData("/categories", "get")]
     [InlineData("/categories", "post")]
     [InlineData("/categories/{id}", "get")]

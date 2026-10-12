@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Threading.RateLimiting;
+using BudgetTracker.Api.Accounts;
 using BudgetTracker.Api.Auth;
 using BudgetTracker.Api.Categories;
 using BudgetTracker.Api.Data;
@@ -97,6 +98,7 @@ app.MapGet("/health", () => Results.Ok(new { status = "ok" }))
     .WithSummary("Liveness check.");
 app.MapAuthEndpoints();
 app.MapCategoryEndpoints();
+app.MapAccountEndpoints();
 
 // Off unless switched on: appsettings.Development.json enables it for local work. Read from
 // app.Configuration (after Build) so every configuration source has been applied.
