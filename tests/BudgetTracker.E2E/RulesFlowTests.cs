@@ -55,7 +55,7 @@ public class RulesFlowTests(AppFixture app)
 
         await page.GetByRole(AriaRole.Button, new() { Name = "Move rule starbucks up" }).ClickAsync();
         await Assertions.Expect(items.Nth(0)).ToContainTextAsync("starbucks");
-        var order = (await api.GetAsync("/rules")).EnumerateArray().Select(r => r.GetProperty("pattern").GetString()).ToArray();
+        var order = (await api.GetAsync("/rules")).EnumerateArray().Select(r => r.GetProperty("pattern").GetString()!).ToArray();
         Assert.Equal(["starbucks", "kroger"], order);   // saved on the server, not only redrawn
 
         await Assertions.Expect(page.GetByRole(AriaRole.Button, new() { Name = "Move rule starbucks up" })).ToBeDisabledAsync();
