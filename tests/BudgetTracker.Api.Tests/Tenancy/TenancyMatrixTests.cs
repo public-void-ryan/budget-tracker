@@ -18,7 +18,8 @@ public class TenancyMatrixTests(PostgresFixture fixture) : ApiTest(fixture)
     private sealed record Person(
         string Token, Account Account, Account Archived, Category Category, Transaction Transaction);
 
-    private sealed record Attempt(string Label, HttpMethod Method, string Url, object? Body, HttpStatusCode Expected, string Code);
+    private sealed record Attempt(
+        string Label, HttpMethod Method, string Url, object? Body, HttpStatusCode Expected, string Code, string? Csv = null);
 
     private async Task<Person> SeedAsync(string label)
     {
@@ -71,6 +72,13 @@ public class TenancyMatrixTests(PostgresFixture fixture) : ApiTest(fixture)
         yield return new("archive their account", HttpMethod.Delete, $"/accounts/{owner.Account.Id}", null, notFound, "not_found");
         yield return new("unarchive their account", HttpMethod.Post, $"/accounts/{owner.Archived.Id}/unarchive", null, notFound, "not_found");
         yield return new("permanently delete their archived account", HttpMethod.Delete, $"/accounts/{owner.Archived.Id}?permanent=true", null, notFound, "not_found");
+        // An import carries a CSV body. Whether the target account is archived must not change
+        // the answer: a 409 would confirm that someone else's account exists and is archived.
+        const string File = "Date,Description,Amount\n2026-10-02,attack,-1\n";
+        yield return new("import into their account", HttpMethod.Post, $"/accounts/{owner.Account.Id}/imports", null, notFound, "not_found", File);
+        yield return new("preview an import into their account", HttpMethod.Post, $"/accounts/{owner.Account.Id}/imports?dryRun=true", null, notFound, "not_found", File);
+        yield return new("import into their archived account", HttpMethod.Post, $"/accounts/{owner.Archived.Id}/imports", null, notFound, "not_found", File);
+        yield return new("preview an import into their archived account", HttpMethod.Post, $"/accounts/{owner.Archived.Id}/imports?dryRun=true", null, notFound, "not_found", File);
         yield return new("read their category", HttpMethod.Get, $"/categories/{owner.Category.Id}", null, notFound, "not_found");
         yield return new("rename their category", HttpMethod.Put, $"/categories/{owner.Category.Id}", new { name = "x" }, notFound, "not_found");
         yield return new("delete their category", HttpMethod.Delete, $"/categories/{owner.Category.Id}", null, notFound, "not_found");
@@ -89,6 +97,16 @@ public class TenancyMatrixTests(PostgresFixture fixture) : ApiTest(fixture)
         yield return new("categorize my transaction with their category", HttpMethod.Put, $"/transactions/{attacker.Transaction.Id}", TransactionBody(ownAccount, owner.Category.Id), refused, "category.invalid");
     }
 
+    private Task<HttpResponseMessage> SendCsvAsync(string url, string token, string csv)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, url)
+        {
+            Content = new StringContent(csv, System.Text.Encoding.UTF8, "text/csv"),
+        };
+        request.Headers.Authorization = new("Bearer", token);
+        return Client.SendAsync(request);
+    }
+
     private async Task AssertCannotTouchAsync(Person owner, Person attacker)
     {
         var before = await SnapshotAsync();
@@ -96,7 +114,9 @@ public class TenancyMatrixTests(PostgresFixture fixture) : ApiTest(fixture)
 
         foreach (var attempt in Attempts(owner, attacker))
         {
-            var response = await SendAsync(attempt.Method, attempt.Url, attacker.Token, attempt.Body);
+            var response = attempt.Csv is null
+                ? await SendAsync(attempt.Method, attempt.Url, attacker.Token, attempt.Body)
+                : await SendCsvAsync(attempt.Url, attacker.Token, attempt.Csv);
             var code = response.Content.Headers.ContentLength is 0
                 ? ""
                 : (await ReadJsonAsync(response)).TryGetProperty("code", out var c) ? c.GetString() : "";
