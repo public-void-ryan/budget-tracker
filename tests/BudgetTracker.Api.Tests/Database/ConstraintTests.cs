@@ -12,7 +12,7 @@ public class ConstraintTests(PostgresFixture fixture) : DatabaseTest(fixture)
 
         await AssertViolationAsync(UniqueViolation, "ix_users_email", async () =>
         {
-            Db.Add(new User { Email = "same@example.com" });
+            Db.Add(new User { Email = "same@example.com", PasswordHash = "x" });
             await Db.SaveChangesAsync();
         });
     }
@@ -22,7 +22,17 @@ public class ConstraintTests(PostgresFixture fixture) : DatabaseTest(fixture)
     {
         await AssertViolationAsync(CheckViolation, "ck_users_email_lowercase", async () =>
         {
-            Db.Add(new User { Email = "Mixed@Example.com" });
+            Db.Add(new User { Email = "Mixed@Example.com", PasswordHash = "x" });
+            await Db.SaveChangesAsync();
+        });
+    }
+
+    [Fact]
+    public async Task User_password_hash_cannot_be_empty()
+    {
+        await AssertViolationAsync(CheckViolation, "ck_users_password_hash_not_empty", async () =>
+        {
+            Db.Add(new User { Email = "nohash@example.com", PasswordHash = "" });
             await Db.SaveChangesAsync();
         });
     }

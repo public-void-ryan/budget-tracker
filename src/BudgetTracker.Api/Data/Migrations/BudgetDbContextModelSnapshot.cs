@@ -135,6 +135,50 @@ namespace BudgetTracker.Api.Data.Migrations
                     b.ToTable("categories", (string)null);
                 });
 
+            modelBuilder.Entity("BudgetTracker.Api.Data.Entities.Session", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<byte[]>("TokenHash")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("token_hash");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_sessions");
+
+                    b.HasIndex("ExpiresAt")
+                        .HasDatabaseName("ix_sessions_expires_at");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique()
+                        .HasDatabaseName("ix_sessions_token_hash");
+
+                    b.HasIndex("UserId", "CreatedAt")
+                        .HasDatabaseName("ix_sessions_user_id_created_at");
+
+                    b.ToTable("sessions", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_sessions_expires_after_created", "expires_at > created_at");
+
+                            t.HasCheckConstraint("ck_sessions_token_hash_length", "octet_length(token_hash) = 32");
+                        });
+                });
+
             modelBuilder.Entity("BudgetTracker.Api.Data.Entities.Transaction", b =>
                 {
                     b.Property<Guid>("Id")
@@ -231,6 +275,12 @@ namespace BudgetTracker.Api.Data.Migrations
                         .HasColumnType("character varying(320)")
                         .HasColumnName("email");
 
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("password_hash");
+
                     b.HasKey("Id")
                         .HasName("pk_users");
 
@@ -241,6 +291,8 @@ namespace BudgetTracker.Api.Data.Migrations
                     b.ToTable("users", null, t =>
                         {
                             t.HasCheckConstraint("ck_users_email_lowercase", "email = lower(email)");
+
+                            t.HasCheckConstraint("ck_users_password_hash_not_empty", "password_hash <> ''");
                         });
                 });
 
@@ -280,6 +332,16 @@ namespace BudgetTracker.Api.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_categories_users_user_id");
+                });
+
+            modelBuilder.Entity("BudgetTracker.Api.Data.Entities.Session", b =>
+                {
+                    b.HasOne("BudgetTracker.Api.Data.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_sessions_users_user_id");
                 });
 
             modelBuilder.Entity("BudgetTracker.Api.Data.Entities.Transaction", b =>

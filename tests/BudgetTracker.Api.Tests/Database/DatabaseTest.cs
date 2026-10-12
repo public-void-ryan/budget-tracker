@@ -1,5 +1,6 @@
 using BudgetTracker.Api.Data;
 using BudgetTracker.Api.Data.Entities;
+using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 
@@ -16,7 +17,11 @@ public abstract class DatabaseTest(PostgresFixture fixture) : IAsyncLifetime
 
     protected async Task<User> AddUserAsync(string? email = null)
     {
-        var user = new User { Email = email ?? $"{Guid.NewGuid():N}@example.com" };
+        var user = new User
+        {
+            Email = email ?? $"{Guid.NewGuid():N}@example.com",
+            PasswordHash = "not-a-real-hash",
+        };
         Db.Add(user);
         await Db.SaveChangesAsync();
         return user;
@@ -73,6 +78,27 @@ public abstract class DatabaseTest(PostgresFixture fixture) : IAsyncLifetime
         Db.Add(budget);
         await Db.SaveChangesAsync();
         return budget;
+    }
+
+    protected static Session NewSession(
+        Guid userId, byte[]? tokenHash = null, DateTimeOffset? createdAt = null, TimeSpan? lifetime = null)
+    {
+        var created = createdAt ?? new DateTimeOffset(2026, 10, 1, 12, 0, 0, TimeSpan.Zero);
+        return new Session
+        {
+            UserId = userId,
+            TokenHash = tokenHash ?? RandomNumberGenerator.GetBytes(32),
+            CreatedAt = created,
+            ExpiresAt = created + (lifetime ?? TimeSpan.FromDays(14)),
+        };
+    }
+
+    protected async Task<Session> AddSessionAsync(User user)
+    {
+        var session = NewSession(user.Id);
+        Db.Add(session);
+        await Db.SaveChangesAsync();
+        return session;
     }
 
     /// <summary>

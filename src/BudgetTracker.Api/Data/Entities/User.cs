@@ -4,5 +4,9 @@ public class User
 {
     public Guid Id { get; init; } = Guid.CreateVersion7();
     public required string Email { get; set; }
+
+    /// <summary>Output of ASP.NET's PasswordHasher (PBKDF2); never the password itself.</summary>
+    public required string PasswordHash { get; set; }
+
     public DateTimeOffset CreatedAt { get; init; }
 }

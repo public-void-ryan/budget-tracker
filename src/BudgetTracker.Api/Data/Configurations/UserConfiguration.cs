@@ -8,10 +8,15 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
 {
     public void Configure(EntityTypeBuilder<User> b)
     {
-        b.ToTable("users", t => t.HasCheckConstraint("ck_users_email_lowercase", "email = lower(email)"));
+        b.ToTable("users", t =>
+        {
+            t.HasCheckConstraint("ck_users_email_lowercase", "email = lower(email)");
+            t.HasCheckConstraint("ck_users_password_hash_not_empty", "password_hash <> ''");
+        });
         b.HasKey(u => u.Id);
         b.Property(u => u.Id).ValueGeneratedNever();
         b.Property(u => u.Email).HasMaxLength(320);
+        b.Property(u => u.PasswordHash).HasMaxLength(255);
         b.HasIndex(u => u.Email).IsUnique();
         b.Property(u => u.CreatedAt).HasDefaultValueSql("now()");
     }
