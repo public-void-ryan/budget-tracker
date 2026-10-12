@@ -8,6 +8,7 @@ using BudgetTracker.Api.Categories;
 using BudgetTracker.Api.Transactions;
 using BudgetTracker.Api.Data;
 using BudgetTracker.Api.Imports;
+using BudgetTracker.Api.Maintenance;
 using BudgetTracker.Api.Rules;
 using BudgetTracker.Api.Ui;
 using Microsoft.AspNetCore.Authentication;
@@ -104,6 +105,12 @@ builder.Services.AddRateLimiter(options =>
 
 var app = builder.Build();
 
+// Deployment commands (migrate, seed-demo) run once and exit instead of serving requests.
+if (MaintenanceCommands.IsCommand(args))
+{
+    return await MaintenanceCommands.RunAsync(args, app.Services);
+}
+
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 app.UseDefaultFiles();
@@ -133,6 +140,7 @@ if (app.Configuration.GetValue<bool>("Documentation:Enabled"))
 }
 
 app.Run();
+return 0;
 
 // Exposed so integration tests can use WebApplicationFactory<Program>.
 public partial class Program;
