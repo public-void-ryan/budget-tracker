@@ -43,6 +43,7 @@ public class ApiDocumentationTests(PostgresFixture fixture) : ApiTest(fixture)
                 "GET /accounts",
                 "GET /accounts/{id}",
                 "GET /budgets",
+                "GET /budgets/summary",
                 "GET /categories",
                 "GET /categories/{id}",
                 "GET /health",
@@ -104,6 +105,7 @@ public class ApiDocumentationTests(PostgresFixture fixture) : ApiTest(fixture)
     [InlineData("/me", "get")]
     [InlineData("/me", "delete")]
     [InlineData("/budgets", "get")]
+    [InlineData("/budgets/summary", "get")]
     [InlineData("/budgets/copy", "post")]
     [InlineData("/budgets/{month}/{categoryId}", "put")]
     [InlineData("/budgets/{month}/{categoryId}", "delete")]

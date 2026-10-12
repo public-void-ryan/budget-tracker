@@ -28,6 +28,18 @@ public static class BudgetEndpoints
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status401Unauthorized);
 
+        budgets.MapGet("/summary", Summary)
+            .WithName("BudgetSummary")
+            .WithSummary("Budget versus actual for a month.")
+            .WithDescription(
+                "One row per category that has a budget or any activity that month, plus the uncategorized "
+                + "total and overall totals. Spent is net outflow: refunds reduce it, and an income category "
+                + "shows a negative number. Transfers are excluded; archived accounts' transactions are "
+                + "included. The totals are the sum of the rows, so nothing is hidden.")
+            .Produces<BudgetSummary>()
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status401Unauthorized);
+
         budgets.MapPut("/{month}/{categoryId:guid}", Put)
             .WithName("SetBudget")
             .WithSummary("Set the budget for a category in a month, creating or replacing it.")
@@ -102,6 +114,44 @@ public static class BudgetEndpoints
             select new { b.CategoryId, CategoryName = c.Name, b.Amount }).ToListAsync(ct);
 
         return Results.Ok(rows.Select(r => new BudgetResponse(r.CategoryId, r.CategoryName, MonthRules.Format(firstDay), r.Amount)));
+    }
+
+    private static async Task<IResult> Summary(
+        [FromQuery] string? month, ClaimsPrincipal user, BudgetDbContext db, CancellationToken ct)
+    {
+        var (first, error) = MonthRules.Parse(month, "month");
+        if (first is null)
+        {
+            return Problems.Validation([error!]);
+        }
+
+        var userId = user.GetId();
+        var firstDay = first.Value;
+        var nextMonth = firstDay.AddMonths(1);
+
+        var budgeted = await db.Budgets.AsNoTracking()
+            .Where(b => b.UserId == userId && b.Month == firstDay)
+            .ToDictionaryAsync(b => b.CategoryId, b => b.Amount, ct);
+
+        // Half-open on dates: the first day of the month is in, the first day of the next is out.
+        // Transfers are not spending, so they are left out.
+        var sums = await db.Transactions.AsNoTracking()
+            .Where(t => t.UserId == userId && t.PostedOn >= firstDay && t.PostedOn < nextMonth && !t.IsTransfer)
+            .GroupBy(t => t.CategoryId)
+            .Select(g => new { CategoryId = g.Key, Net = g.Sum(t => t.Amount) })
+            .ToListAsync(ct);
+
+        var net = sums.Where(x => x.CategoryId is not null).ToDictionary(x => x.CategoryId!.Value, x => x.Net);
+        var uncategorizedNet = sums.Where(x => x.CategoryId is null).Sum(x => x.Net);
+
+        var wanted = budgeted.Keys.Concat(net.Keys).Distinct().ToList();
+        var categories = await db.Categories.AsNoTracking()
+            .Where(c => c.UserId == userId && wanted.Contains(c.Id))
+            .OrderBy(c => c.Name)
+            .Select(c => new CategoryRef(c.Id, c.Name))
+            .ToListAsync(ct);
+
+        return Results.Ok(BudgetSummaryBuilder.Build(MonthRules.Format(firstDay), categories, budgeted, net, uncategorizedNet));
     }
 
     private static async Task<IResult> Put(
