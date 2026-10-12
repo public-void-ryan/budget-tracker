@@ -43,11 +43,16 @@ export async function transactionsView(root) {
     return q;
   }
 
+  // A newer search supersedes an older one still in flight; its rows must not be appended.
+  let latest = 0;
+
   async function load(reset) {
+    const mine = ++latest;
     status.clear();
     if (reset) { cursor = null; clear(body); }
     try {
       const page = await api("GET", `/transactions?${query()}`);
+      if (mine !== latest) return;
       body.append(...page.items.map(row));
       cursor = page.nextCursor;
       more.hidden = cursor === null;

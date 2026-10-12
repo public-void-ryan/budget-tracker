@@ -7,13 +7,23 @@ export async function homeView(root) {
   const output = h("div", { "aria-live": "polite" });
   const picker = monthPicker(load);
 
+  // Only the latest request may draw, so a slow answer for a month you have left cannot overwrite the current one.
+  let latest = 0;
+
   async function load(month = getMonth()) {
+    const mine = ++latest;
     status.clear();
+    output.setAttribute("aria-busy", "true");
     try {
-      show(await api("GET", `/budgets/summary?month=${month}`));
+      const summary = await api("GET", `/budgets/summary?month=${month}`);
+      if (mine === latest) show(summary);
     } catch (e) {
-      clear(output);
-      status.error(describe(e));
+      if (mine === latest) {
+        clear(output);
+        status.error(describe(e));
+      }
+    } finally {
+      if (mine === latest) output.setAttribute("aria-busy", "false");
     }
   }
 

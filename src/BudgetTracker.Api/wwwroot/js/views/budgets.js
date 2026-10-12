@@ -10,13 +10,22 @@ export async function budgetsView(root) {
 
   const picker = monthPicker((m) => { month = m; status.clear(); load(); });
 
+  // Only the latest request may draw: a slow answer for a month you have already left must
+  // not replace the rows (and whatever you typed into them) for the month you are on.
+  let latest = 0;
+
   async function load() {
+    const mine = ++latest;
+    body.setAttribute("aria-busy", "true");
     try {
       const budgets = await api("GET", `/budgets?month=${month}`);
+      if (mine !== latest) return;
       const amounts = new Map(budgets.map((b) => [b.categoryId, b.amount]));
       clear(body, categories.map((c) => row(c, amounts.get(c.id))));
     } catch (e) {
-      status.error(describe(e));
+      if (mine === latest) status.error(describe(e));
+    } finally {
+      if (mine === latest) body.setAttribute("aria-busy", "false");
     }
   }
 
