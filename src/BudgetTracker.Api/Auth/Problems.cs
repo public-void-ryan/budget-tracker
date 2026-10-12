@@ -34,7 +34,9 @@ public static class Problems
         title: "Incorrect password.",
         extensions: new Dictionary<string, object?> { ["code"] = "auth.incorrect_password" });
 
+    /// <summary>Also what another user's resource looks like, so ids cannot be used to probe.</summary>
     public static IResult NotFound() => Results.Problem(
         statusCode: StatusCodes.Status404NotFound,
-        title: "Not found.");
+        title: "Not found.",
+        extensions: new Dictionary<string, object?> { ["code"] = "not_found" });
 }

@@ -17,6 +17,8 @@ public static class ConstraintErrors
         new Dictionary<string, ConstraintRule>
         {
             ["ix_users_email"] = new(StatusCodes.Status409Conflict, "email.taken", "That email is already registered."),
+            ["ix_categories_user_id_name"] = new(
+                StatusCodes.Status409Conflict, "category.name_taken", "You already have a category with that name."),
         };
 }
 

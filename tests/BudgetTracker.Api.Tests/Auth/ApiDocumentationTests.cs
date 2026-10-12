@@ -29,11 +29,23 @@ public class ApiDocumentationTests(PostgresFixture fixture) : ApiTest(fixture)
 
         var operations = document.GetProperty("paths").EnumerateObject()
             .SelectMany(path => path.Value.EnumerateObject().Select(op => $"{op.Name.ToUpperInvariant()} {path.Name}"))
-            .Order()
+            .Order(StringComparer.Ordinal)
             .ToArray();
 
         Assert.Equal(
-            ["DELETE /me", "GET /health", "GET /me", "POST /auth/login", "POST /auth/logout", "POST /auth/register"],
+            [
+                "DELETE /categories/{id}",
+                "DELETE /me",
+                "GET /categories",
+                "GET /categories/{id}",
+                "GET /health",
+                "GET /me",
+                "POST /auth/login",
+                "POST /auth/logout",
+                "POST /auth/register",
+                "POST /categories",
+                "PUT /categories/{id}",
+            ],
             operations);
     }
 
@@ -67,6 +79,11 @@ public class ApiDocumentationTests(PostgresFixture fixture) : ApiTest(fixture)
     [InlineData("/auth/logout", "post")]
     [InlineData("/me", "get")]
     [InlineData("/me", "delete")]
+    [InlineData("/categories", "get")]
+    [InlineData("/categories", "post")]
+    [InlineData("/categories/{id}", "get")]
+    [InlineData("/categories/{id}", "put")]
+    [InlineData("/categories/{id}", "delete")]
     public async Task Endpoints_that_need_a_session_require_the_bearer_scheme(string path, string method)
     {
         var operation = Operation(await DocumentAsync(), path, method);

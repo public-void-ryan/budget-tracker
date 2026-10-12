@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Threading.RateLimiting;
 using BudgetTracker.Api.Auth;
+using BudgetTracker.Api.Categories;
 using BudgetTracker.Api.Data;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.RateLimiting;
@@ -95,6 +96,7 @@ app.MapGet("/health", () => Results.Ok(new { status = "ok" }))
     .WithName("Health")
     .WithSummary("Liveness check.");
 app.MapAuthEndpoints();
+app.MapCategoryEndpoints();
 
 // Off unless switched on: appsettings.Development.json enables it for local work. Read from
 // app.Configuration (after Build) so every configuration source has been applied.

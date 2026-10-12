@@ -100,6 +100,23 @@ public abstract class ApiTest(PostgresFixture fixture) : IAsyncLifetime
     protected SessionService NewSessionService(BudgetDbContext context, AuthSessionOptions? sessionOptions = null) =>
         new(context, Clock, Options.Create(sessionOptions ?? new AuthSessionOptions()));
 
+    protected Task<HttpResponseMessage> SendAsync(
+        HttpMethod method, string url, string? token = null, object? body = null)
+    {
+        var request = new HttpRequestMessage(method, url);
+        if (token is not null)
+        {
+            request.Headers.Authorization = new("Bearer", token);
+        }
+
+        if (body is not null)
+        {
+            request.Content = JsonContent.Create(body);
+        }
+
+        return Client.SendAsync(request);
+    }
+
     protected HttpRequestMessage Get(string url, string? token = null, string scheme = "Bearer")
     {
         var request = new HttpRequestMessage(HttpMethod.Get, url);
