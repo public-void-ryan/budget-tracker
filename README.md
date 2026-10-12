@@ -2,7 +2,7 @@
 
 A personal-finance API: import bank transactions, categorize them automatically, and track spending against monthly budgets.
 
-**Status:** milestone 8 of 8 (deployment) configured, going live. The API and a web UI are done and tested end to end in a real browser: register, log in, manage categories and accounts, add and page through transactions, import a bank's CSV export (previewing it first), categorize automatically with ordered rules, set monthly budgets and see budget against actual spending. The [deployment](#deployment) is configured and the write-up is in this README; see the [roadmap](#roadmap).
+**Status:** all 8 milestones complete. Live demo: **https://budget.ryanfp.dev** (log in as `demo@example.com`, password `budget-demo-2026`; see [Deployment](#deployment)). The API and a web UI are done and tested end to end in a real browser: register, log in, manage categories and accounts, add and page through transactions, import a bank's CSV export (previewing it first), categorize automatically with ordered rules, set monthly budgets and see budget against actual spending. 
 
 ## Planned scope
 
@@ -406,4 +406,4 @@ The common-password check uses passwords of 12 or more characters from the Pwdb 
 5. ~~CSV import with dedup~~
 6. ~~Categorization rules and budgets~~
 7. ~~UI and E2E tests~~
-8. Deploy and write-up ← next
+8. ~~Deploy and write-up~~
