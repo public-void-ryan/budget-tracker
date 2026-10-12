@@ -2,7 +2,7 @@
 
 A personal-finance API: import bank transactions, categorize them automatically, and track spending against monthly budgets.
 
-**Status:** milestone 4 of 8 complete. The data model, authentication and the core CRUD API are done and tested: you can register, log in, manage categories and accounts, and add, edit, filter and page through transactions. CSV import and budgets come next; see the [roadmap](#roadmap).
+**Status:** milestone 5 of 8 complete. The data model, authentication, the core CRUD API and CSV import are done and tested: you can register, log in, manage categories and accounts, add and page through transactions, and import a bank's CSV export, previewing it first and re-uploading overlapping statements without creating duplicates. Categorization rules and budgets come next; see the [roadmap](#roadmap).
 
 ## Planned scope
 
@@ -17,7 +17,7 @@ Deliberately out of scope: bank-API integrations, multi-currency, mobile app.
 
 ## Stack
 
-C# / .NET 10 minimal API, PostgreSQL 17 (EF Core), OpenAPI with the Scalar explorer, xUnit + Testcontainers, Docker, GitHub Actions.
+C# / .NET 10 minimal API, PostgreSQL 17 (EF Core), CsvHelper, OpenAPI with the Scalar explorer, xUnit + Testcontainers, Docker, GitHub Actions.
 
 ## API
 
@@ -46,6 +46,7 @@ Everything except register, login and health needs `Authorization: Bearer <token
 | `GET`, `PUT /accounts/{id}` | 200, 400, 404, 409 |
 | `DELETE /accounts/{id}` | 204 archives it; `?permanent=true` deletes it for good (409 unless already archived) |
 | `POST /accounts/{id}/unarchive` | 200, 404 |
+| `POST /accounts/{id}/imports` | 200 (`?dryRun=true` previews), 400, 404, 409, 413, 415, 422; [importing](#importing-a-csv) |
 | `GET /transactions` | 200 with `{ items, nextCursor }`; [filters and pagination](#pagination) |
 | `POST /transactions` | 201, 400, 409 (account archived), 422 (account or category missing or not yours) |
 | `GET`, `PUT`, `DELETE /transactions/{id}` | 200 or 204, 400, 404, 409, 422 |
@@ -85,6 +86,30 @@ curl "localhost:5268/transactions?limit=2&cursor=<nextCursor>" -H "$A"
 `GET /transactions` returns your transactions newest first (posted date, then id, both descending) as `{ "items": [...], "nextCursor": "..." }`. Pass `nextCursor` back as `cursor` to get the next page; it is `null` on the last page. `limit` defaults to 50 and is clamped to 100 (below 1 is a 400). The cursor is opaque: treat it as a string and do not build one yourself.
 
 Filters, all combined with AND: `accountId`, `categoryId`, `from` and `to` (inclusive, written `yyyy-MM-dd`) and `isTransfer`. Filtering by an id that is not yours finds nothing rather than failing.
+
+### Importing a CSV
+
+`POST /accounts/{id}/imports` takes a bank's CSV export as the request body (`Content-Type: text/csv`, UTF-8). Add `?dryRun=true` first to see what would happen: nothing is written, and every row comes back as `new` or `duplicate`, with the amount as it would be stored next to the amount in the file so a wrong sign is visible before anything is saved.
+
+```bash
+curl -X POST "localhost:5268/accounts/<account id>/imports?dryRun=true" -H "$A" \
+  -H 'content-type: text/csv' --data-binary @statement.csv
+curl -X POST "localhost:5268/accounts/<account id>/imports" -H "$A" \
+  -H 'content-type: text/csv' --data-binary @statement.csv
+```
+
+```json
+{ "dryRun": false, "signInverted": false, "total": 4, "new": 2, "duplicates": 2, "imported": 2,
+  "rows": [ { "row": 1, "postedOn": "2026-10-01", "description": "Starbucks #12",
+              "amount": -4.50, "fileAmount": -4.50, "status": "duplicate" } ] }
+```
+
+- **Columns** are detected from common header names (`Date`, `Posted Date`; `Description`, `Memo`, `Payee`; `Amount`), or named with `dateColumn`, `descriptionColumn` and `amountColumn`. A file that splits money out and in uses `debitColumn` and `creditColumn`.
+- **Dates** are `iso` (`2026-10-31`) by default; `dateFormat` picks `us` (`10/31/2026`), `eu` (`31/10/2026`), `isoslash` or `eudots`. The layout is always a choice, never a guess, because `03/04/2026` means different days in different countries.
+- **Amounts** may be written `-4.50`, `$4.50`, `(4.50)` for a negative or `1,234.56`. `12,50` is refused as ambiguous.
+- **One bad row rejects the whole file** with a 422 that lists every problem by row (up to 100), so a half-imported file never exists.
+- **Limits:** 5 MB and 10,000 rows. A file that is not UTF-8 is refused with a clear error instead of being stored with broken accents.
+- Imported transactions are uncategorized and ordinary in every other way: they can be edited, moved and deleted.
 
 ### API explorer
 
@@ -172,7 +197,7 @@ erDiagram
 
 ## Design decisions
 
-Each of these is enforced by the database or the application and covered by a test. Several columns (`archived_at`, `invert_sign`, `is_transfer`, the import columns) exist now so later milestones don't need schema rewrites; the behavior that uses them arrives in the milestones noted below.
+Each of these is enforced by the database or the application and covered by a test. Where a column exists ahead of its feature (`is_transfer`), the milestone that uses it is noted.
 
 ### Data
 
@@ -180,11 +205,11 @@ Each of these is enforced by the database or the application and covered by a te
 
 **The database refuses cross-user references.** A foreign key to `categories(id)` alone would accept another user's category on your transaction. Instead, `accounts` and `categories` have a unique `(user_id, id)`, and `transactions` and `budgets` reference that pair. Even if a future endpoint forgets an ownership check, the write fails. One consequence: when a category is deleted its transactions keep their category as `NULL`, which needs `ON DELETE SET NULL (category_id)` so that `user_id` is left alone. EF Core can only emit `SET NULL` for every column of a composite key, so that one constraint is hand-written SQL in the migration (it requires PostgreSQL 15+). A test proves the behavior, so it cannot silently regress.
 
-**Re-importing a file is safe, and identical rows survive.** CSV rows are identified by a content hash. Hashing alone would treat two real $4.50 coffees on the same day as duplicates and silently drop one, so each row also gets an occurrence number (`import_seq`) within its file. The unique key is `(account_id, import_hash, import_seq)`: re-importing a file is rejected, and a genuine second coffee is kept. Hand-entered transactions have no hash and are never deduplicated. (The import itself arrives in milestone 5.)
+**Re-importing a file is safe, and identical rows survive.** CSV rows are identified by a content hash. Hashing alone would treat two real $4.50 coffees on the same day as duplicates and silently drop one, so each row also gets an occurrence number (`import_seq`) within its file. The unique key is `(account_id, import_hash, import_seq)`: re-importing a file is rejected, and a genuine second coffee is kept. Hand-entered transactions have no hash and are never deduplicated. (How the import uses this is described under [Importing](#importing).)
 
 **Transfers don't count as spending.** Paying a credit card from checking appears as two transactions in real bank data. Counting the checking side as spending would double-count everything the card paid for, so `is_transfer` excludes a transaction from category spending and budgets. Pairing the two legs of a transfer is the more complete model, but it needs matching logic; it is a possible upgrade, not part of this scope. (Milestone 6.)
 
-**One sign rule for stored amounts.** Banks disagree: many credit card exports show a purchase as a positive number. Rather than infer or ask on every upload, `accounts.invert_sign` is set once per account and import flips the sign, so stored data always follows one rule. A preview step in milestone 5 will show signs before committing, since a wrong sign is a silent error.
+**One sign rule for stored amounts.** Banks disagree: many credit card exports show a purchase as a positive number. Rather than infer or ask on every upload, `accounts.invert_sign` is set once per account and import flips the sign, so stored data always follows one rule. The import preview shows the stored amount next to the file's amount for exactly that reason, since a wrong sign is a silent error.
 
 **Deletes follow ownership, with archiving for history.** Deleting a user cascades to everything they own, so a user's data can actually be removed. Deleting an account removes its transactions, which is why `accounts.archived_at` exists: closing an old account should hide it without losing history, and hard deletion is for explicit requests. (The API side is described under [The finance API](#the-finance-api).)
 
@@ -220,6 +245,18 @@ Each of these is enforced by the database or the application and covered by a te
 
 **Constraint failures are API errors, in one table.** Duplicate names are 409s (`category.name_taken`, `account.name_taken`) and unusable references are 422s (`account.invalid`, `category.invalid`). Two simultaneous creates of the same name produce one resource and one clean 409.
 
+### Importing
+
+**Uploading the same statement twice is harmless.** Every imported row is identified by the SHA-256 of its date, amount and description, plus an occurrence number among identical rows in its file, and that pair is a unique key per account. A re-upload finds every row already there; an overlapping statement adds only what the other lacked; and two genuine $4.50 coffees on one day are both kept, while a later export that shows a third adds exactly one. The description is compared ignoring case, surrounding space and Unicode composition (`café` typed two ways is the same word), and the amount to four decimals. The hash uses the amount exactly as the file wrote it, before the account's sign setting is applied, so toggling that setting later cannot turn a re-upload into new transactions.
+
+**The identity scheme is a contract with stored data.** Changing how rows are hashed would silently stop re-imports from matching what is already in the database, so the algorithm is pinned by golden hashes computed with a different implementation (Python's `hashlib`), not by the code under test. One trap the tests also cover: lowercasing with the machine's culture would hash `ISTANBUL` differently on a Turkish-locale server, so it uses the invariant culture. One consequence to know: only stored rows count as "already imported", so a transaction deleted after import comes back if its file is imported again.
+
+**Preview, then commit, all or nothing.** A dry run classifies every row against what the account holds and writes nothing. A real import validates the whole file first, then stores the new rows in one transaction, so a bad row anywhere means nothing is imported and every problem is reported at once. The CSV parsing and row validation are pure code with their own unit tests and share the amount rules with manual entry, so the two paths cannot disagree about what a valid amount is.
+
+**Simultaneous imports cannot race.** A commit locks the account's row for its duration, so two overlapping uploads run one after the other, and the second finds the first's rows already stored. A test fires six simultaneous imports of one file and checks each row exists exactly once. The lock is scoped to the caller's own account, so a guessed id cannot be used to hold someone else's row, and an import into someone else's archived account answers 404 like a missing one, never the 409 that would confirm it exists.
+
+**Hostile or sloppy input is bounded.** The 5 MB limit is enforced while reading, not only from the declared `Content-Length`, which a chunked upload does not have and a client can misstate. The reader is a small class tested on its own with streams that report no length, because the in-memory test server did not exercise that path. The row cap, the strict UTF-8 requirement and the strict amount and date parsing follow the same rule as the rest of the API: refuse and explain rather than guess.
+
 ### Testing
 
 **Tests run against real PostgreSQL.** The guarantees above are database behavior (composite keys, check constraints, partial uniqueness, row locks), and EF Core's in-memory and SQLite providers ignore or differ on most of them. The tests start one PostgreSQL container, migrate a template database once, and give every test its own copy, so isolation is cheap. API tests drive the real application over HTTP against that database. Most authenticated tests insert a session row directly and send its token, so they skip the deliberately slow password hashing but still go through the real authentication handler; the auth behavior itself is tested once, thoroughly, through the real endpoints. One test also fails if the model changes without a matching migration.
@@ -232,6 +269,7 @@ Each of these is enforced by the database or the application and covered by a te
 - **Registration reveals taken emails** (see above); unavoidable without verification.
 - **`DELETE /me` carries a JSON body.** Some clients and proxies drop request bodies on DELETE; the result is a clean 400, not data loss.
 - **The rate limit keys on the client address.** Behind a reverse proxy that is the proxy's address unless forwarded headers are configured, which is a deployment step (milestone 8).
+- **Import has no history or undo,** reads UTF-8 only (other encodings are refused, not guessed), expects a comma delimiter, and does not categorize: rules are the next milestone. OFX and QIF are not supported.
 - **Browser token storage is undecided** until the UI exists (milestone 7); today the token is sent in the `Authorization` header.
 - **Category and account names are case-sensitive:** "Food" and "food" can coexist, as the schema defines. Case-insensitive uniqueness would need a schema change.
 - **No optimistic concurrency, bulk operations, text search or "uncategorized only" filter.** The categorization milestone will add what it needs.
@@ -261,6 +299,8 @@ CI builds an EF migration bundle (`dotnet ef migrations bundle`) and applies it 
 
 ## Credits
 
+CSV parsing uses [CsvHelper](https://joshclose.github.io/CsvHelper/).
+
 The common-password check uses passwords of 12 or more characters from the Pwdb top-100000 list in [SecLists](https://github.com/danielmiessler/SecLists) (MIT licensed), lowercased and embedded as a resource.
 
 ## Roadmap
@@ -269,7 +309,7 @@ The common-password check uses passwords of 12 or more characters from the Pwdb 
 2. ~~Data model and migrations~~
 3. ~~Auth~~
 4. ~~Core CRUD API~~
-5. CSV import with dedup ← next
-6. Categorization rules and budgets
+5. ~~CSV import with dedup~~
+6. Categorization rules and budgets ← next
 7. UI and E2E tests
 8. Deploy and write-up
