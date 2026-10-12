@@ -2,7 +2,7 @@
 
 A personal-finance API: import bank transactions, categorize them automatically, and track spending against monthly budgets.
 
-**Status:** milestone 7 of 8 complete. The API and a web UI are done and tested end to end in a real browser: register, log in, manage categories and accounts, add and page through transactions, import a bank's CSV export (previewing it first), categorize automatically with ordered rules, set monthly budgets and see budget against actual spending. Deployment and the write-up come next; see the [roadmap](#roadmap).
+**Status:** milestone 8 of 8 (deployment) configured, going live. The API and a web UI are done and tested end to end in a real browser: register, log in, manage categories and accounts, add and page through transactions, import a bank's CSV export (previewing it first), categorize automatically with ordered rules, set monthly budgets and see budget against actual spending. The [deployment](#deployment) is configured and the write-up is in this README; see the [roadmap](#roadmap).
 
 ## Planned scope
 
@@ -331,7 +331,7 @@ Each of these is enforced by the database or the application and covered by a te
 - **Not built:** email verification, password reset, multi-factor and social login. Password reset needs email infrastructure, which is not worth it for this scope.
 - **Registration reveals taken emails** (see above); unavoidable without verification.
 - **`DELETE /me` carries a JSON body.** Some clients and proxies drop request bodies on DELETE; the result is a clean 400, not data loss.
-- **The rate limit keys on the client address.** Behind a reverse proxy that is the proxy's address unless forwarded headers are configured, which is a deployment step (milestone 8).
+- **The rate limit keys on the client address.** Behind a reverse proxy that is the proxy's address, so the deployment turns on `ForwardedHeaders:Enabled` (see [Deployment](#deployment)); without it every client shares one bucket.
 - **Import has no history or undo,** reads UTF-8 only (other encodings are refused, not guessed), expects a comma delimiter, and categorizes only through rules (see above). OFX and QIF are not supported.
 - **The UI keeps its token in `sessionStorage`** (see above), so a successful XSS would expose it. An HttpOnly cookie is the stronger option and needs a CSRF design.
 - **The UI is deliberately small:** rules, categories, accounts and transactions cannot be edited in place beyond a transaction's category (the API supports it; delete and re-add instead), import previews show the first 500 rows, there is one language and no automated accessibility audit. Labels and roles are built in, and the tests find every control through them, but keyboard-only use and contrast have not been audited and a tool like axe has not been run.
@@ -340,6 +340,23 @@ Each of these is enforced by the database or the application and covered by a te
 - **Budgets are per category per month,** with no rollover, no budget for a category group, and no multi-currency.
 - **No optimistic concurrency, bulk operations, text search or "uncategorized only" filter.**
 - **Upgrade paths:** Argon2id for password hashing, a breached-password check against the Have I Been Pwned range API, sliding sessions, and a `/v2` route prefix if a second API consumer ever appears.
+
+## Deployment
+
+The app runs on a NixOS VPS at **https://budget.ryanfp.dev** as a public demo. The server configuration lives in my NixOS configuration (`modules/budget-tracker.nix` and `packages/budget-tracker` there); this section is what that setup does and why.
+
+```text
+internet ─ nginx (TLS, 6 MB body limit) ─ 127.0.0.1:8090  BudgetTracker.Api ─ unix socket ─ PostgreSQL
+                                          └ budget_app role: data rights only
+          migrate / seed-demo units ──────────────────────────────────────── budget role: owns the schema
+```
+
+- **Demo account.** Registration is off (`POST /auth/register` is a 404). Log in as `demo@example.com` with password `budget-demo-2026`. It has three months of data, and this month's groceries and dining are deliberately uncategorized so you can try Rules → Apply. Everyone shares the account, so it is **rebuilt from scratch every night** (04:10 UTC) and on each deploy by `BudgetTracker.Api seed-demo`, which deletes exactly one user, `demo@example.com`, and recreates it. A visitor cannot leave a lasting mess.
+- **Migrations are a deploy step.** `BudgetTracker.Api migrate` applies pending EF Core migrations and exits. A systemd unit runs it before the web server starts, as a different database role from the one the server uses. The server's role has `SELECT`, `INSERT`, `UPDATE` and `DELETE` and nothing else, so even a remote-code-execution bug in the app could not drop or alter a table. Both roles authenticate by peer credentials over the local socket: no database password exists. (The EF migration bundle that CI builds cannot run on NixOS directly, since it is a generic Linux binary; a subcommand of the app itself does the same work with the packaged runtime.)
+- **Packaged with Nix.** The app is built from a pinned commit with NuGet packages locked in `deps.json`, so a deploy builds exactly what CI tested. A NixOS VM test boots the packaged app under the real units and sandbox against a real PostgreSQL, and checks the claims above: it serves the UI and API, runs as an unprivileged user, listens on loopback only, has registration off, cannot change its own schema, and survives a trashed demo account.
+- **Behind a proxy.** The login rate limit is per client address, so with nginx in front it reads `X-Forwarded-For`, but only when `ForwardedHeaders:Enabled` is set and only from a loopback peer. Tests prove that a header from anywhere else cannot be used to dodge the limit.
+- **Sandboxed.** The unit runs with a systemd sandbox (no privilege escalation, read-only filesystem except its state directory, private `/tmp`, restricted syscalls and address families, a 512 MB memory cap). One flag, `MemoryDenyWriteExecute`, had to be left off because the .NET JIT cannot run under it; the VM test found this.
+- **Monitored, not backed up.** Gatus polls `/health` every five minutes. The database is not in the backup set: with registration off it holds nothing but the demo data, which is regenerated nightly.
 
 ## Develop
 
