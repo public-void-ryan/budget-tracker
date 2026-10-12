@@ -27,8 +27,22 @@ public sealed class AppFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        _container = new PostgreSqlBuilder("postgres:17").Build();
-        await _container.StartAsync();
+        // Starting can fail transiently (a previous run's cleanup container still holding a port).
+        // A failed container cannot be restarted, so each attempt builds a fresh one.
+        for (var attempt = 1; ; attempt++)
+        {
+            _container = new PostgreSqlBuilder("postgres:17").Build();
+            try
+            {
+                await _container.StartAsync();
+                break;
+            }
+            catch when (attempt < 4)
+            {
+                await _container.DisposeAsync();
+                await Task.Delay(TimeSpan.FromSeconds(3 * attempt));
+            }
+        }
 
         var connection = _container.GetConnectionString();
         await using (var context = new BudgetDbContext(
