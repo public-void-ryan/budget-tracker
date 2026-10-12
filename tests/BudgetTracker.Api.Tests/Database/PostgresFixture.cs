@@ -25,7 +25,7 @@ public sealed class PostgresFixture : IAsyncLifetime
         await _container.StartAsync();
         await ExecuteAdminAsync($"CREATE DATABASE {TemplateDb}");
 
-        await using var context = CreateContext(TemplateDb);
+        await using var context = CreateContext(ConnectionStringFor(TemplateDb));
         await context.Database.MigrateAsync();
 
         // A template database cannot be copied while any connection to it is open.
@@ -34,26 +34,28 @@ public sealed class PostgresFixture : IAsyncLifetime
 
     public async Task DisposeAsync() => await _container.DisposeAsync();
 
-    public async Task<BudgetDbContext> CreateDatabaseAsync()
+    public async Task<string> CreateDatabaseConnectionStringAsync()
     {
         var name = $"test_{Interlocked.Increment(ref _counter)}";
         await ExecuteAdminAsync($"CREATE DATABASE {name} TEMPLATE {TemplateDb}");
-        return CreateContext(name);
+        return ConnectionStringFor(name);
     }
 
-    private BudgetDbContext CreateContext(string database)
-    {
-        var connectionString = new NpgsqlConnectionStringBuilder(_container.GetConnectionString())
-        {
-            Database = database,
-        }.ConnectionString;
+    public async Task<BudgetDbContext> CreateDatabaseAsync() =>
+        CreateContext(await CreateDatabaseConnectionStringAsync());
 
+    public BudgetDbContext CreateContext(string connectionString)
+    {
         var options = new DbContextOptionsBuilder<BudgetDbContext>()
             .UseNpgsql(connectionString)
             .UseSnakeCaseNamingConvention()
             .Options;
         return new BudgetDbContext(options);
     }
+
+    private string ConnectionStringFor(string database) =>
+        new NpgsqlConnectionStringBuilder(_container.GetConnectionString()) { Database = database }
+            .ConnectionString;
 
     private async Task ExecuteAdminAsync(string sql)
     {
