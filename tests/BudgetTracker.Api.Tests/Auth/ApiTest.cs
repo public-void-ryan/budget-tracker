@@ -63,12 +63,12 @@ public abstract class ApiTest(PostgresFixture fixture) : IAsyncLifetime
     /// handler and session lookup are still what the request goes through.
     /// </summary>
     protected async Task<(User User, string Token)> CreateUserWithSessionAsync(
-        string? email = null, TimeSpan? lifetime = null, TimeSpan? age = null)
+        string? email = null, TimeSpan? lifetime = null, TimeSpan? age = null, string? password = null)
     {
         var user = new User
         {
             Email = email ?? $"{Guid.NewGuid():N}@example.com",
-            PasswordHash = "not-a-real-hash",
+            PasswordHash = password is null ? "not-a-real-hash" : new PasswordService().Hash(password),
         };
         Db.Add(user);
 

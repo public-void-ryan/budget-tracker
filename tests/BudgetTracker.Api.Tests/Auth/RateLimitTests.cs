@@ -1,5 +1,6 @@
 using System.Net;
 using BudgetTracker.Api.Tests.Database;
+using Microsoft.EntityFrameworkCore;
 
 namespace BudgetTracker.Api.Tests.Auth;
 
@@ -53,5 +54,32 @@ public class RateLimitTests(PostgresFixture fixture) : ApiTest(fixture)
         {
             Assert.Equal(HttpStatusCode.OK, (await Client.SendAsync(Get("/me", token))).StatusCode);
         }
+    }
+
+    [Fact]
+    public async Task Account_deletion_shares_the_budget_so_a_stolen_token_cannot_guess_the_password()
+    {
+        var (user, token) = await CreateUserWithSessionAsync(password: GoodPassword);
+
+        async Task<HttpResponseMessage> DeleteWith(string password)
+        {
+            var request = new HttpRequestMessage(HttpMethod.Delete, "/me")
+            {
+                Content = System.Net.Http.Json.JsonContent.Create(new { password }),
+            };
+            request.Headers.Authorization = new("Bearer", token);
+            return await Client.SendAsync(request);
+        }
+
+        for (var i = 0; i < 3; i++)
+        {
+            Assert.Equal(HttpStatusCode.Forbidden, (await DeleteWith("a wrong guess here")).StatusCode);
+        }
+
+        // The correct password is now refused too: the guess budget is spent.
+        var limited = await DeleteWith(GoodPassword);
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, limited.StatusCode);
+        Assert.Equal(1, await Db.Users.CountAsync(u => u.Id == user.Id));
     }
 }

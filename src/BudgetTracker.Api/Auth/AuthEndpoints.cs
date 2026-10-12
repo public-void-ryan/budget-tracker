@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using BudgetTracker.Api.Data;
 using BudgetTracker.Api.Data.Entities;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -13,6 +14,8 @@ public sealed record LoginRequest(string? Email, string? Password);
 public sealed record LoginResponse(string Token, string TokenType, DateTimeOffset ExpiresAt);
 
 public sealed record UserResponse(Guid Id, string Email);
+
+public sealed record DeleteAccountRequest(string? Password);
 
 public static class AuthEndpoints
 {
@@ -30,6 +33,10 @@ public static class AuthEndpoints
         auth.MapPost("/logout", Logout).RequireAuthorization();
 
         app.MapGet("/me", Me).RequireAuthorization();
+
+        // Shares the login rate-limit budget: re-entering the password makes this a password
+        // oracle, and a stolen session token must not buy unlimited guesses.
+        app.MapDelete("/me", DeleteMe).RequireAuthorization().RequireRateLimiting(RateLimitPolicy);
         return app;
     }
 
@@ -128,4 +135,42 @@ public static class AuthEndpoints
     private static IResult Me(ClaimsPrincipal principal) => Results.Ok(new UserResponse(
         Guid.Parse(principal.FindFirstValue(ClaimTypes.NameIdentifier)!),
         principal.FindFirstValue(ClaimTypes.Email)!));
+
+    private static async Task<IResult> DeleteMe(
+        [FromBody] DeleteAccountRequest request,
+        ClaimsPrincipal principal,
+        BudgetDbContext db,
+        IPasswordService passwords,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrEmpty(request.Password))
+        {
+            return Problems.Validation([new("password", "password.required", "Password is required.")]);
+        }
+
+        var userId = Guid.Parse(principal.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var storedHash = await db.Users
+            .AsNoTracking()
+            .Where(u => u.Id == userId)
+            .Select(u => u.PasswordHash)
+            .SingleOrDefaultAsync(ct);
+
+        if (storedHash is null)
+        {
+            // Deleted between authentication and here (for example a second DELETE in flight).
+            return Problems.AuthenticationRequired();
+        }
+
+        if (request.Password.Length > LoginPasswordMaxLength
+            || passwords.Verify(storedHash, request.Password) == PasswordVerification.Invalid)
+        {
+            return Problems.IncorrectPassword();
+        }
+
+        // One statement. The foreign keys' ON DELETE CASCADE remove every row the user owns:
+        // accounts, categories, transactions, budgets and sessions, so the token that made
+        // this request stops working the moment it returns.
+        await db.Users.Where(u => u.Id == userId).ExecuteDeleteAsync(ct);
+        return Results.NoContent();
+    }
 }

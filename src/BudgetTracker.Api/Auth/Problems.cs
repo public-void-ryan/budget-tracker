@@ -20,6 +20,20 @@ public static class Problems
         title: "Invalid email or password.",
         extensions: new Dictionary<string, object?> { ["code"] = "auth.invalid_credentials" });
 
+    public static IResult AuthenticationRequired() => Results.Problem(
+        statusCode: StatusCodes.Status401Unauthorized,
+        title: "Authentication required.",
+        extensions: new Dictionary<string, object?> { ["code"] = "auth.required" });
+
+    /// <summary>
+    /// 403, not 401: the session is fine, a confirmation failed. A 401 would tell clients the
+    /// session is dead and prompt them to log the user out.
+    /// </summary>
+    public static IResult IncorrectPassword() => Results.Problem(
+        statusCode: StatusCodes.Status403Forbidden,
+        title: "Incorrect password.",
+        extensions: new Dictionary<string, object?> { ["code"] = "auth.incorrect_password" });
+
     public static IResult NotFound() => Results.Problem(
         statusCode: StatusCodes.Status404NotFound,
         title: "Not found.");
