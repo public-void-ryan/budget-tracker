@@ -19,7 +19,13 @@ public class BudgetFlowTests(AppFixture app)
         await Assertions.Expect(page.GetByRole(AriaRole.Heading, new() { Name = heading, Exact = true })).ToBeVisibleAsync();
     }
 
-    private static async Task ChooseMonthAsync(IPage page, string month) => await page.GetByLabel("Month").FillAsync(month);
+    private static async Task ChooseMonthAsync(IPage page, string month)
+    {
+        await page.GetByLabel("Month").FillAsync(month);
+
+        // The screen marks what it is loading; typing before it settles would race the redraw.
+        await Assertions.Expect(page.Locator("[aria-busy=true]")).ToHaveCountAsync(0);
+    }
 
     private static ILocator Summary(IPage page) => page.GetByRole(AriaRole.Table, new() { Name = "Budget against actual" });
 
@@ -148,6 +154,28 @@ public class BudgetFlowTests(AppFixture app)
         await page.GetByRole(AriaRole.Button, new() { Name = "Copy last month’s budgets" }).ClickAsync();
 
         await Assertions.Expect(page.GetByLabel("Budget for Food")).ToHaveValueAsync("120");
+    }
+
+    [Fact]
+    public async Task A_slow_answer_for_a_month_you_have_left_does_not_overwrite_the_one_you_are_on()
+    {
+        var (page, api) = await SignedInAsync();
+        var food = await api.CategoryAsync("Food");
+        (await api.SendAsync(HttpMethod.Put, $"/budgets/2026-09/{food}", new { amount = 111 })).EnsureSuccessStatusCode();
+        (await api.SendAsync(HttpMethod.Put, $"/budgets/2026-10/{food}", new { amount = 222 })).EnsureSuccessStatusCode();
+        await page.RouteAsync("**/budgets?month=2026-09", async route =>
+        {
+            await Task.Delay(1500);
+            await route.ContinueAsync();
+        });
+        await GoToAsync(page, "Budgets", "Budgets");
+
+        await page.GetByLabel("Month").FillAsync("2026-09");   // slow
+        await page.GetByLabel("Month").FillAsync("2026-10");   // fast, and the one we stay on
+        await Assertions.Expect(page.GetByLabel("Budget for Food")).ToHaveValueAsync("222");
+
+        await Task.Delay(2500);   // long enough for the stale September answer to arrive
+        await Assertions.Expect(page.GetByLabel("Budget for Food")).ToHaveValueAsync("222");
     }
 
     [Fact]
