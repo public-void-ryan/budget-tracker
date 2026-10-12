@@ -2,7 +2,7 @@
 
 A personal-finance API: import bank transactions, categorize them automatically, and track spending against monthly budgets.
 
-**Status:** milestone 3 of 8 complete. The data model, migrations and authentication are done and tested: you can register, log in, inspect your account and delete it. The finance endpoints (accounts, transactions, categories) arrive in milestone 4; see the [roadmap](#roadmap).
+**Status:** milestone 4 of 8 complete. The data model, authentication and the core CRUD API are done and tested: you can register, log in, manage categories and accounts, and add, edit, filter and page through transactions. CSV import and budgets come next; see the [roadmap](#roadmap).
 
 ## Planned scope
 
@@ -21,6 +21,10 @@ C# / .NET 10 minimal API, PostgreSQL 17 (EF Core), OpenAPI with the Scalar explo
 
 ## API
 
+Everything except register, login and health needs `Authorization: Bearer <token>`. The OpenAPI document lists every status code below (see the [API explorer](#api-explorer)).
+
+### Authentication and account
+
 | Endpoint | Auth | Responses |
 | --- | --- | --- |
 | `POST /auth/register` | none | 201, 400, 404 (registration off), 409 (email taken), 429 |
@@ -30,24 +34,57 @@ C# / .NET 10 minimal API, PostgreSQL 17 (EF Core), OpenAPI with the Scalar explo
 | `DELETE /me` | bearer + password in the body | 204, 400, 401, 403 (wrong password), 429 |
 | `GET /health` | none | 200 |
 
+### Categories, accounts and transactions
+
+| Endpoint | Responses |
+| --- | --- |
+| `GET /categories` | 200, ordered by name (not paginated) |
+| `POST /categories` | 201, 400, 409 (name taken) |
+| `GET`, `PUT`, `DELETE /categories/{id}` | 200 or 204, 400, 404, 409 |
+| `GET /accounts` | 200; archived accounts only with `?includeArchived=true` |
+| `POST /accounts` | 201, 400, 409 (name taken) |
+| `GET`, `PUT /accounts/{id}` | 200, 400, 404, 409 |
+| `DELETE /accounts/{id}` | 204 archives it; `?permanent=true` deletes it for good (409 unless already archived) |
+| `POST /accounts/{id}/unarchive` | 200, 404 |
+| `GET /transactions` | 200 with `{ items, nextCursor }`; [filters and pagination](#pagination) |
+| `POST /transactions` | 201, 400, 409 (account archived), 422 (account or category missing or not yours) |
+| `GET`, `PUT`, `DELETE /transactions/{id}` | 200 or 204, 400, 404, 409, 422 |
+
 Errors are [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) problem responses with a stable `code` you can switch on. Validation errors add a per-field `errors` map and a matching `codes` map:
 
 ```json
 { "title": "That email is already registered.", "status": 409, "code": "email.taken" }
 { "title": "One or more validation errors occurred.", "status": 400,
-  "errors": { "password": ["Password is too common."] },
-  "codes":  { "password": ["password.too_common"] } }
+  "errors": { "amount": ["Amount may have at most 4 decimal places."] },
+  "codes":  { "amount": ["amount.too_precise"] } }
 ```
 
 ```bash
-curl -X POST localhost:5268/auth/register -H 'content-type: application/json' \
+H='content-type: application/json'
+
+curl -X POST localhost:5268/auth/register -H "$H" \
   -d '{"email":"you@example.com","password":"correct horse battery staple"}'
-
-TOKEN=$(curl -s -X POST localhost:5268/auth/login -H 'content-type: application/json' \
+TOKEN=$(curl -s -X POST localhost:5268/auth/login -H "$H" \
   -d '{"email":"you@example.com","password":"correct horse battery staple"}' | jq -r .token)
+A="authorization: Bearer $TOKEN"
 
-curl localhost:5268/me -H "authorization: Bearer $TOKEN"
+curl -X POST localhost:5268/categories -H "$H" -H "$A" -d '{"name":"Groceries"}'
+curl -X POST localhost:5268/accounts   -H "$H" -H "$A" -d '{"name":"Everyday","type":"Checking"}'
+
+# Amounts are signed JSON numbers: negative is money leaving the account.
+curl -X POST localhost:5268/transactions -H "$H" -H "$A" \
+  -d '{"accountId":"<account id>","postedOn":"2026-10-01","amount":-12.50,"description":"milk"}'
+
+# Newest first, two at a time; pass nextCursor back as cursor for the next page.
+curl "localhost:5268/transactions?limit=2" -H "$A"
+curl "localhost:5268/transactions?limit=2&cursor=<nextCursor>" -H "$A"
 ```
+
+### Pagination
+
+`GET /transactions` returns your transactions newest first (posted date, then id, both descending) as `{ "items": [...], "nextCursor": "..." }`. Pass `nextCursor` back as `cursor` to get the next page; it is `null` on the last page. `limit` defaults to 50 and is clamped to 100 (below 1 is a 400). The cursor is opaque: treat it as a string and do not build one yourself.
+
+Filters, all combined with AND: `accountId`, `categoryId`, `from` and `to` (inclusive, written `yyyy-MM-dd`) and `isTransfer`. Filtering by an id that is not yours finds nothing rather than failing.
 
 ### API explorer
 
@@ -131,7 +168,7 @@ erDiagram
     }
 ```
 
-`amount` is `numeric(19,4)`: no floating-point rounding, and negative means money leaving the account. IDs are time-ordered UUIDv7. The schema is defined with EF Core configurations in `src/BudgetTracker.Api/Data/Configurations/`; the generated SQL lives in the migrations.
+`amount` is `numeric(19,4)`: no floating-point rounding, and negative means money leaving the account. IDs are time-ordered UUIDv7. The newest-first transaction list is served by an index on `(user_id, posted_on DESC, id DESC)`; a test checks that the query planner uses it without a sort. The schema is defined with EF Core configurations in `src/BudgetTracker.Api/Data/Configurations/`; the generated SQL lives in the migrations.
 
 ## Design decisions
 
@@ -149,7 +186,7 @@ Each of these is enforced by the database or the application and covered by a te
 
 **One sign rule for stored amounts.** Banks disagree: many credit card exports show a purchase as a positive number. Rather than infer or ask on every upload, `accounts.invert_sign` is set once per account and import flips the sign, so stored data always follows one rule. A preview step in milestone 5 will show signs before committing, since a wrong sign is a silent error.
 
-**Deletes follow ownership, with archiving for history.** Deleting a user cascades to everything they own, so a user's data can actually be removed. Deleting an account removes its transactions, which is why `accounts.archived_at` exists: closing an old account should hide it without losing history, and hard deletion is for explicit requests. (API behavior in milestone 4.)
+**Deletes follow ownership, with archiving for history.** Deleting a user cascades to everything they own, so a user's data can actually be removed. Deleting an account removes its transactions, which is why `accounts.archived_at` exists: closing an old account should hide it without losing history, and hard deletion is for explicit requests. (The API side is described under [The finance API](#the-finance-api).)
 
 ### Authentication
 
@@ -169,6 +206,20 @@ Each of these is enforced by the database or the application and covered by a te
 
 **Time is injected.** Everything that depends on the clock (expiry, the purge interval, the cap) reads `TimeProvider`, so tests move time instead of waiting on it.
 
+### The finance API
+
+**Someone else's data does not exist.** A resource that belongs to another user returns the same 404 as one that was never created, so ids cannot be used to probe what exists. Referring to someone else's account or category in a request body is refused by the database itself, through the composite foreign keys, and comes back as a 422; the application only pre-checks whether the caller's own account is archived. The answer is deliberately the same whether or not the other user's account is archived: a 409 there would confirm it exists. A single test has two users attack each other through every endpoint and cross-reference and then checks that every row of every table is unchanged; mutating only the archived-account lookup made that test, and nothing else, fail.
+
+**Lists are paginated by keyset, not by offset.** Page N costs the same as page 1, because each page continues from the last item's `(posted_on, id)` along an index instead of counting rows to skip. It is also stable: a transaction that arrives between two requests never causes a repeat or a gap, which offsets cannot promise. The tie-break on `id` matters because many transactions share a date, and the tests page through heavily tied data and compare against the order PostgreSQL itself produces (.NET and PostgreSQL order UUIDs differently, so sorting in C# would not be a trustworthy expectation). The tradeoff: no jumping to page 47 and no total count. Categories and accounts are not paginated, since a user has a handful of each.
+
+**Archived accounts are frozen, in both directions.** Nothing can be added to one, edited in one, moved out of one, moved into one or deleted from one (409), but its history stays readable and `unarchive` reopens it. Permanent deletion takes two deliberate steps: archive, then `DELETE ?permanent=true`.
+
+**Inputs are strict, and nothing is silently adjusted.** Amounts must be JSON numbers (a string is a 400, a global setting, since ASP.NET accepts `"12.50"` by default), not zero, below 10^15, and with at most four decimal places. Too many decimals are refused rather than rounded, because quietly changing a money amount is never right. Dates are exactly `yyyy-MM-dd`. Account types are the exact names `Checking`, `Savings` or `Credit`: a first version using `Enum.TryParse` would have accepted `"Checking, Savings"` and OR-ed the values, which a test now pins. Names and descriptions are trimmed, reject control characters, and are limited by Unicode characters, so 100 emoji fit a `varchar(100)`.
+
+**Updates replace the whole resource.** `PUT` sends everything; an omitted optional field returns to its default, and `archivedAt` cannot be changed through `PUT`. There is no optimistic concurrency: two simultaneous edits of one resource are last-write-wins. The upgrade path is an ETag from PostgreSQL's `xmin` with `If-Match` returning 412.
+
+**Constraint failures are API errors, in one table.** Duplicate names are 409s (`category.name_taken`, `account.name_taken`) and unusable references are 422s (`account.invalid`, `category.invalid`). Two simultaneous creates of the same name produce one resource and one clean 409.
+
 ### Testing
 
 **Tests run against real PostgreSQL.** The guarantees above are database behavior (composite keys, check constraints, partial uniqueness, row locks), and EF Core's in-memory and SQLite providers ignore or differ on most of them. The tests start one PostgreSQL container, migrate a template database once, and give every test its own copy, so isolation is cheap. API tests drive the real application over HTTP against that database. Most authenticated tests insert a session row directly and send its token, so they skip the deliberately slow password hashing but still go through the real authentication handler; the auth behavior itself is tested once, thoroughly, through the real endpoints. One test also fails if the model changes without a matching migration.
@@ -182,6 +233,8 @@ Each of these is enforced by the database or the application and covered by a te
 - **`DELETE /me` carries a JSON body.** Some clients and proxies drop request bodies on DELETE; the result is a clean 400, not data loss.
 - **The rate limit keys on the client address.** Behind a reverse proxy that is the proxy's address unless forwarded headers are configured, which is a deployment step (milestone 8).
 - **Browser token storage is undecided** until the UI exists (milestone 7); today the token is sent in the `Authorization` header.
+- **Category and account names are case-sensitive:** "Food" and "food" can coexist, as the schema defines. Case-insensitive uniqueness would need a schema change.
+- **No optimistic concurrency, bulk operations, text search or "uncategorized only" filter.** The categorization milestone will add what it needs.
 - **Upgrade paths:** Argon2id for password hashing, a breached-password check against the Have I Been Pwned range API, sliding sessions, and a `/v2` route prefix if a second API consumer ever appears.
 
 ## Develop
@@ -215,8 +268,8 @@ The common-password check uses passwords of 12 or more characters from the Pwdb 
 1. ~~Skeleton and CI~~
 2. ~~Data model and migrations~~
 3. ~~Auth~~
-4. Core CRUD API ← next
-5. CSV import with dedup
+4. ~~Core CRUD API~~
+5. CSV import with dedup ← next
 6. Categorization rules and budgets
 7. UI and E2E tests
 8. Deploy and write-up
