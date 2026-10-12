@@ -55,9 +55,6 @@ public static class TransactionEndpoints
 {
     public const int DescriptionMaxLength = 500;
 
-    // numeric(19,4): 15 digits before the decimal point, 4 after.
-    private const decimal MaxAmount = 999_999_999_999_999.9999m;
-    private const int AmountScale = 4;
     private const string DateFormat = "yyyy-MM-dd";
 
     public static IEndpointRouteBuilder MapTransactionEndpoints(this IEndpointRouteBuilder app)
@@ -153,18 +150,9 @@ public static class TransactionEndpoints
         {
             errors.Add(new("amount", "amount.required", "Amount is required."));
         }
-        else if (amount == 0m)
+        else if (MoneyRules.Check(amount) is var (code, message))
         {
-            errors.Add(new("amount", "amount.zero", "Amount must not be zero."));
-        }
-        else if (Math.Abs(amount) > MaxAmount)
-        {
-            errors.Add(new("amount", "amount.out_of_range", "Amount is too large."));
-        }
-        else if (decimal.Round(amount, AmountScale) != amount)
-        {
-            // Rejected rather than rounded: silently changing a money amount is never right.
-            errors.Add(new("amount", "amount.too_precise", $"Amount may have at most {AmountScale} decimal places."));
+            errors.Add(new("amount", code, message));
         }
 
         var (description, descriptionErrors) =
