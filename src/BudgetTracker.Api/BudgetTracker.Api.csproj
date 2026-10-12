@@ -16,4 +16,9 @@
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Passwords of 12+ characters from the Pwdb top-100k list (SecLists, MIT), lowercased. -->
+    <EmbeddedResource Include="Auth\common-passwords.txt" LogicalName="common-passwords.txt" />
+  </ItemGroup>
+
 </Project>
