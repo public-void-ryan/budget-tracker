@@ -25,6 +25,10 @@ public static class ConstraintErrors
                 StatusCodes.Status422UnprocessableEntity, "category.invalid", "That category does not exist."),
             ["fk_rules_categories_user_id_category_id"] = new(
                 StatusCodes.Status422UnprocessableEntity, "category.invalid", "That category does not exist."),
+            ["fk_budgets_categories_user_id_category_id"] = new(
+                StatusCodes.Status422UnprocessableEntity, "category.invalid", "That category does not exist."),
+            ["ix_budgets_user_id_category_id_month"] = new(
+                StatusCodes.Status409Conflict, "budget.exists", "A budget for that category and month was created at the same moment; try again."),
             ["ix_categories_user_id_name"] = new(
                 StatusCodes.Status409Conflict, "category.name_taken", "You already have a category with that name."),
         };

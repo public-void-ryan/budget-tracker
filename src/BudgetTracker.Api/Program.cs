@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using BudgetTracker.Api.Accounts;
 using BudgetTracker.Api.Auth;
+using BudgetTracker.Api.Budgets;
 using BudgetTracker.Api.Categories;
 using BudgetTracker.Api.Transactions;
 using BudgetTracker.Api.Data;
@@ -118,6 +119,7 @@ app.MapAccountEndpoints();
 app.MapTransactionEndpoints();
 app.MapImportEndpoints();
 app.MapRuleEndpoints();
+app.MapBudgetEndpoints();
 
 // Off unless switched on: appsettings.Development.json enables it for local work. Read from
 // app.Configuration (after Build) so every configuration source has been applied.

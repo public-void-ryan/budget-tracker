@@ -35,12 +35,14 @@ public class ApiDocumentationTests(PostgresFixture fixture) : ApiTest(fixture)
         Assert.Equal(
             [
                 "DELETE /accounts/{id}",
+                "DELETE /budgets/{month}/{categoryId}",
                 "DELETE /categories/{id}",
                 "DELETE /me",
                 "DELETE /rules/{id}",
                 "DELETE /transactions/{id}",
                 "GET /accounts",
                 "GET /accounts/{id}",
+                "GET /budgets",
                 "GET /categories",
                 "GET /categories/{id}",
                 "GET /health",
@@ -56,12 +58,14 @@ public class ApiDocumentationTests(PostgresFixture fixture) : ApiTest(fixture)
                 "POST /auth/login",
                 "POST /auth/logout",
                 "POST /auth/register",
+                "POST /budgets/copy",
                 "POST /categories",
                 "POST /rules",
                 "POST /rules/apply",
                 "POST /rules/order",
                 "POST /transactions",
                 "PUT /accounts/{id}",
+                "PUT /budgets/{month}/{categoryId}",
                 "PUT /categories/{id}",
                 "PUT /rules/{id}",
                 "PUT /transactions/{id}",
@@ -99,6 +103,10 @@ public class ApiDocumentationTests(PostgresFixture fixture) : ApiTest(fixture)
     [InlineData("/auth/logout", "post")]
     [InlineData("/me", "get")]
     [InlineData("/me", "delete")]
+    [InlineData("/budgets", "get")]
+    [InlineData("/budgets/copy", "post")]
+    [InlineData("/budgets/{month}/{categoryId}", "put")]
+    [InlineData("/budgets/{month}/{categoryId}", "delete")]
     [InlineData("/rules", "get")]
     [InlineData("/rules", "post")]
     [InlineData("/rules/apply", "post")]
