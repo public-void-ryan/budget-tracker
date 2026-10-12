@@ -2,7 +2,7 @@
 
 A personal-finance API: import bank transactions, categorize them automatically, and track spending against monthly budgets.
 
-**Status:** milestone 6 of 8 complete. The API is feature-complete: you can register, log in, manage categories and accounts, add and page through transactions, import a bank's CSV export (previewing it first, re-uploading overlapping statements safely), categorize automatically with ordered rules, set monthly budgets and see budget against actual spending. The web UI and the deployment come next; see the [roadmap](#roadmap).
+**Status:** milestone 7 of 8 complete. The API and a web UI are done and tested end to end in a real browser: register, log in, manage categories and accounts, add and page through transactions, import a bank's CSV export (previewing it first), categorize automatically with ordered rules, set monthly budgets and see budget against actual spending. Deployment and the write-up come next; see the [roadmap](#roadmap).
 
 ## Planned scope
 
@@ -126,6 +126,10 @@ curl -X POST "localhost:5268/accounts/<account id>/imports" -H "$A" \
 - **One bad row rejects the whole file** with a 422 that lists every problem by row (up to 100), so a half-imported file never exists.
 - **Limits:** 5 MB and 10,000 rows. A file that is not UTF-8 is refused with a clear error instead of being stored with broken accents.
 - Imported transactions are uncategorized and ordinary in every other way: they can be edited, moved and deleted.
+
+### Web UI
+
+Run the app and open `http://localhost:5268/`. The UI is served by the API itself from `wwwroot/`, so there is one thing to deploy, no CORS, and no build step: plain ES modules, no framework and no npm. Screens: Overview (budget against actual for a month), Transactions (filters, paging, add, recategorize, delete), Import (preview, then commit), Budgets (set, remove, copy last month), Rules (add, reorder, test a description, preview and apply) and Accounts and categories.
 
 ### API explorer
 
@@ -306,9 +310,19 @@ Each of these is enforced by the database or the application and covered by a te
 
 **Remaining and over are only defined with a budget.** A category with spending but no budget has `budgeted` and `remaining` null and is never "over". Exactly on budget is not over. A category appears if it has a budget or any activity that month. The month is a half-open date range, so the query uses the same `(user_id, posted_on, id)` index as the listing (a planner test checks it), and month ends, leap days and December are tested.
 
+### The web UI
+
+**The browser keeps its token in `sessionStorage`, behind a strict Content-Security-Policy.** The API uses bearer tokens, and the choice for a browser is where to keep one. An HttpOnly cookie cannot be read by script, but it is sent automatically, which adds a CSRF problem and a second authentication path to the API. `sessionStorage` is readable by any script on the page, so the defence is making sure none can run: the policy is `default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'` with no inline script or style, no third-party code, and no `innerHTML` anywhere. The UI builds elements with `createElement` and `textContent`, so a transaction description like `<img src=x onerror=...>` is shown as text (a browser test pins this). The token disappears when the tab closes, and any 401 returns to the login screen. An HttpOnly cookie with `SameSite=Strict` is the upgrade path if the API ever has other browser clients.
+
+**No framework, and no build step.** The UI is about 900 lines of JavaScript across small modules (`api.js` for requests and errors, `dom.js` for building elements, one file per screen). For this size a framework would be most of the code and most of the dependencies. The cost is no type checking in the UI; the browser tests are what keep it honest.
+
+**The server stays the authority.** The UI checks only what saves a round trip (an amount is a plain decimal with at most four places, so a typed `1e3` is never sent) and shows the API's own messages for everything else, so the rules are defined once.
+
 ### Testing
 
 **Tests run against real PostgreSQL.** The guarantees above are database behavior (composite keys, check constraints, partial uniqueness, row locks), and EF Core's in-memory and SQLite providers ignore or differ on most of them. The tests start one PostgreSQL container, migrate a template database once, and give every test its own copy, so isolation is cheap. API tests drive the real application over HTTP against that database. Most authenticated tests insert a session row directly and send its token, so they skip the deliberately slow password hashing but still go through the real authentication handler; the auth behavior itself is tested once, thoroughly, through the real endpoints. One test also fails if the model changes without a matching migration.
+
+**The UI is tested in a real browser.** `tests/BudgetTracker.E2E` starts the actual application on a real port against a PostgreSQL container and drives Chromium with Playwright, finding everything by role and label, as a person or screen reader would. Each test registers its own user, sets up its data through the API, and then checks the screen and the resulting server state: for example that a preview writes nothing, that a reorder was saved and not only redrawn, and that logging out revokes the token on the server. Each flow was checked by breaking the UI in a targeted way and confirming a test fails.
 
 **Migrations are a deploy step, not application startup.** CI builds an EF migration bundle and applies it to an empty database, then applies it again to prove it is a no-op. The app never alters its own schema on startup, so its database user needs only data rights, and a bad migration fails the build instead of crashing a boot.
 
@@ -319,7 +333,8 @@ Each of these is enforced by the database or the application and covered by a te
 - **`DELETE /me` carries a JSON body.** Some clients and proxies drop request bodies on DELETE; the result is a clean 400, not data loss.
 - **The rate limit keys on the client address.** Behind a reverse proxy that is the proxy's address unless forwarded headers are configured, which is a deployment step (milestone 8).
 - **Import has no history or undo,** reads UTF-8 only (other encodings are refused, not guessed), expects a comma delimiter, and categorizes only through rules (see above). OFX and QIF are not supported.
-- **Browser token storage is undecided** until the UI exists (milestone 7); today the token is sent in the `Authorization` header.
+- **The UI keeps its token in `sessionStorage`** (see above), so a successful XSS would expose it. An HttpOnly cookie is the stronger option and needs a CSRF design.
+- **The UI is deliberately small:** rules, categories, accounts and transactions cannot be edited in place beyond a transaction's category (the API supports it; delete and re-add instead), import previews show the first 500 rows, there is one language and no automated accessibility audit. Labels and roles are built in, and the tests find every control through them, but keyboard-only use and contrast have not been audited and a tool like axe has not been run.
 - **Category and account names are case-sensitive:** "Food" and "food" can coexist, as the schema defines. Case-insensitive uniqueness would need a schema change.
 - **Rules are deliberately small:** no regex, no conditions on amount or account, no re-categorizing after a rule edit (no provenance), no auto-categorizing of manually entered transactions.
 - **Budgets are per category per month,** with no rollover, no budget for a category group, and no multi-currency.
@@ -330,9 +345,20 @@ Each of these is enforced by the database or the application and covered by a te
 
 ```bash
 dotnet run --project src/BudgetTracker.Api   # http://localhost:5268, Development settings
-dotnet test                                  # needs Docker (Testcontainers starts PostgreSQL)
+dotnet test tests/BudgetTracker.Api.Tests   # needs Docker (Testcontainers starts PostgreSQL)
+dotnet test tests/BudgetTracker.E2E          # browser tests: needs Docker and Chromium (below)
 docker build -t budget-tracker . && docker run -p 8080:8080 budget-tracker
 ```
+
+### Browser tests
+
+```bash
+dotnet build tests/BudgetTracker.E2E
+pwsh tests/BudgetTracker.E2E/bin/Debug/net10.0/playwright.ps1 install chromium   # once
+dotnet test tests/BudgetTracker.E2E
+```
+
+On NixOS, point Playwright at nixpkgs' matching browsers instead: `PLAYWRIGHT_BROWSERS_PATH=$(nix build --print-out-paths nixpkgs#playwright-driver.browsers)`, `PLAYWRIGHT_NODEJS_PATH=$(which node)` and `PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=true`. The `Microsoft.Playwright` package version must match nixpkgs' `playwright-driver` (both 1.63.0 today).
 
 ### Local database
 
@@ -350,7 +376,7 @@ CI builds an EF migration bundle (`dotnet ef migrations bundle`) and applies it 
 
 ## Credits
 
-CSV parsing uses [CsvHelper](https://joshclose.github.io/CsvHelper/).
+CSV parsing uses [CsvHelper](https://joshclose.github.io/CsvHelper/). Browser tests use [Playwright for .NET](https://playwright.dev/dotnet/).
 
 The common-password check uses passwords of 12 or more characters from the Pwdb top-100000 list in [SecLists](https://github.com/danielmiessler/SecLists) (MIT licensed), lowercased and embedded as a resource.
 
@@ -362,5 +388,5 @@ The common-password check uses passwords of 12 or more characters from the Pwdb 
 4. ~~Core CRUD API~~
 5. ~~CSV import with dedup~~
 6. ~~Categorization rules and budgets~~
-7. UI and E2E tests ← next
-8. Deploy and write-up
+7. ~~UI and E2E tests~~
+8. Deploy and write-up ← next
