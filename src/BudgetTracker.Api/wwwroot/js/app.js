@@ -3,6 +3,7 @@ import { h, clear } from "./dom.js";
 import { authView } from "./views/auth.js";
 import { homeView } from "./views/home.js";
 import { importView } from "./views/import.js";
+import { rulesView } from "./views/rules.js";
 import { setupView } from "./views/setup.js";
 import { transactionsView } from "./views/transactions.js";
 
@@ -16,6 +17,7 @@ const routes = [
   ["#/", "Overview", homeView],
   ["#/transactions", "Transactions", transactionsView],
   ["#/import", "Import", importView],
+  ["#/rules", "Rules", rulesView],
   ["#/setup", "Accounts and categories", setupView],
 ];
 
