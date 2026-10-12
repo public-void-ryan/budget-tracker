@@ -135,6 +135,61 @@ namespace BudgetTracker.Api.Data.Migrations
                     b.ToTable("categories", (string)null);
                 });
 
+            modelBuilder.Entity("BudgetTracker.Api.Data.Entities.Rule", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid?>("CategoryId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("category_id");
+
+                    b.Property<bool>("MarkTransfer")
+                        .HasColumnType("boolean")
+                        .HasColumnName("mark_transfer");
+
+                    b.Property<string>("MatchType")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("match_type");
+
+                    b.Property<string>("Pattern")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("pattern");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("integer")
+                        .HasColumnName("position");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_rules");
+
+                    b.HasIndex("UserId", "CategoryId")
+                        .HasDatabaseName("ix_rules_user_id_category_id");
+
+                    b.HasIndex("UserId", "Position", "Id")
+                        .HasDatabaseName("ix_rules_user_id_position_id");
+
+                    b.ToTable("rules", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_rules_has_action", "category_id IS NOT NULL OR mark_transfer");
+
+                            t.HasCheckConstraint("ck_rules_match_type", "match_type IN ('Contains', 'StartsWith', 'Equals')");
+
+                            t.HasCheckConstraint("ck_rules_pattern_not_blank", "pattern ~ '\\S'");
+
+                            t.HasCheckConstraint("ck_rules_position_nonnegative", "position >= 0");
+                        });
+                });
+
             modelBuilder.Entity("BudgetTracker.Api.Data.Entities.Session", b =>
                 {
                     b.Property<Guid>("Id")
@@ -336,6 +391,23 @@ namespace BudgetTracker.Api.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_categories_users_user_id");
+                });
+
+            modelBuilder.Entity("BudgetTracker.Api.Data.Entities.Rule", b =>
+                {
+                    b.HasOne("BudgetTracker.Api.Data.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_rules_users_user_id");
+
+                    b.HasOne("BudgetTracker.Api.Data.Entities.Category", null)
+                        .WithMany()
+                        .HasForeignKey("UserId", "CategoryId")
+                        .HasPrincipalKey("UserId", "Id")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .HasConstraintName("fk_rules_categories_user_id_category_id");
                 });
 
             modelBuilder.Entity("BudgetTracker.Api.Data.Entities.Session", b =>

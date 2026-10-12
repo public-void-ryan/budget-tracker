@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
+using BudgetTracker.Api.Text;
 
 namespace BudgetTracker.Api.Imports;
 
@@ -40,10 +41,7 @@ public static class ImportDedup
     /// </summary>
     public static string Canonical(DateOnly date, decimal amount, string description) =>
         string.Create(CultureInfo.InvariantCulture,
-            $"{date:yyyy-MM-dd}|{amount.ToString("F4", CultureInfo.InvariantCulture)}|{Normalize(description)}");
-
-    private static string Normalize(string description) =>
-        description.Trim().Normalize(NormalizationForm.FormC).ToLowerInvariant();
+            $"{date:yyyy-MM-dd}|{amount.ToString("F4", CultureInfo.InvariantCulture)}|{DescriptionText.Normalize(description)}");
 
     public static string Hash(ParsedRow row) =>
         Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(Canonical(row.Date, row.Amount, row.Description))));
