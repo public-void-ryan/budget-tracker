@@ -47,6 +47,7 @@ public class ApiDocumentationTests(PostgresFixture fixture) : ApiTest(fixture)
                 "GET /transactions",
                 "GET /transactions/{id}",
                 "POST /accounts",
+                "POST /accounts/{id}/imports",
                 "POST /accounts/{id}/unarchive",
                 "POST /auth/login",
                 "POST /auth/logout",
@@ -100,6 +101,7 @@ public class ApiDocumentationTests(PostgresFixture fixture) : ApiTest(fixture)
     [InlineData("/accounts/{id}", "get")]
     [InlineData("/accounts/{id}", "put")]
     [InlineData("/accounts/{id}", "delete")]
+    [InlineData("/accounts/{id}/imports", "post")]
     [InlineData("/accounts/{id}/unarchive", "post")]
     [InlineData("/categories", "get")]
     [InlineData("/categories", "post")]

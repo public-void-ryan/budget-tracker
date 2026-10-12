@@ -6,6 +6,7 @@ using BudgetTracker.Api.Auth;
 using BudgetTracker.Api.Categories;
 using BudgetTracker.Api.Transactions;
 using BudgetTracker.Api.Data;
+using BudgetTracker.Api.Imports;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
@@ -22,6 +23,7 @@ builder.Services.AddDbContext<BudgetDbContext>(options =>
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IPasswordService, PasswordService>();
 builder.Services.AddScoped<SessionService>();
+builder.Services.AddScoped<ImportService>();
 builder.Services.Configure<RegistrationOptions>(builder.Configuration.GetSection(RegistrationOptions.Section));
 builder.Services
     .AddOptions<AuthSessionOptions>()
@@ -107,6 +109,7 @@ app.MapAuthEndpoints();
 app.MapCategoryEndpoints();
 app.MapAccountEndpoints();
 app.MapTransactionEndpoints();
+app.MapImportEndpoints();
 
 // Off unless switched on: appsettings.Development.json enables it for local work. Read from
 // app.Configuration (after Build) so every configuration source has been applied.
