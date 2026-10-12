@@ -15,14 +15,32 @@ public sealed class PostgresFixture : IAsyncLifetime
 {
     private const string TemplateDb = "budget_template";
 
-    private readonly PostgreSqlContainer _container =
-        new PostgreSqlBuilder("postgres:17").Build();
+    private PostgreSqlContainer _container = null!;
 
     private int _counter;
 
     public async Task InitializeAsync()
     {
-        await _container.StartAsync();
+        // Starting can fail transiently (for example the previous run's cleanup container still
+        // holding a port), and one failure here fails every test in the run. A failed container
+        // cannot be restarted, so each attempt builds a fresh one.
+        await Retry.RunAsync(
+            async _ =>
+            {
+                _container = new PostgreSqlBuilder("postgres:17").Build();
+                try
+                {
+                    await _container.StartAsync();
+                }
+                catch
+                {
+                    await _container.DisposeAsync();
+                    throw;
+                }
+            },
+            attempts: 4,
+            delayAfter: attempt => TimeSpan.FromSeconds(3 * attempt));
+
         await ExecuteAdminAsync($"CREATE DATABASE {TemplateDb}");
 
         await using var context = CreateContext(ConnectionStringFor(TemplateDb));
