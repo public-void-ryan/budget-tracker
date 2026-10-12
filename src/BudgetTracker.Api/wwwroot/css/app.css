@@ -57,9 +57,8 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .error { color: var(--bad); }
 .ok { color: var(--good); }
 .pill { display: inline-block; font-size: 0.75rem; border: 1px solid var(--line); border-radius: 999px; padding: 0 0.5rem; color: var(--muted); }
-.meter { height: 0.6rem; background: var(--line); border-radius: 999px; overflow: hidden; min-width: 6rem; }
-.meter > span { display: block; height: 100%; background: var(--good); }
-.meter.over > span { background: var(--bad); }
+progress { width: 100%; min-width: 6rem; height: 0.7rem; accent-color: var(--good); }
+progress.over { accent-color: var(--bad); }
 .toolbar { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: end; margin-bottom: 1rem; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 @media (max-width: 40rem) {
