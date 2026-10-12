@@ -178,9 +178,8 @@ public static class AuthEndpoints
         return Results.NoContent();
     }
 
-    private static IResult Me(ClaimsPrincipal principal) => Results.Ok(new UserResponse(
-        Guid.Parse(principal.FindFirstValue(ClaimTypes.NameIdentifier)!),
-        principal.FindFirstValue(ClaimTypes.Email)!));
+    private static IResult Me(ClaimsPrincipal principal) =>
+        Results.Ok(new UserResponse(principal.GetId(), principal.FindFirstValue(ClaimTypes.Email)!));
 
     private static async Task<IResult> DeleteMe(
         [FromBody] DeleteAccountRequest request,
@@ -194,7 +193,7 @@ public static class AuthEndpoints
             return Problems.Validation([new("password", "password.required", "Password is required.")]);
         }
 
-        var userId = Guid.Parse(principal.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var userId = principal.GetId();
         var storedHash = await db.Users
             .AsNoTracking()
             .Where(u => u.Id == userId)

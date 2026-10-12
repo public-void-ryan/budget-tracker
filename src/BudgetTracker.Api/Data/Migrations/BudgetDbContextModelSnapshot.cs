@@ -249,6 +249,10 @@ namespace BudgetTracker.Api.Data.Migrations
                         .IsUnique()
                         .HasDatabaseName("ix_transactions_account_id_import_hash_import_seq");
 
+                    b.HasIndex("UserId", "PostedOn", "Id")
+                        .IsDescending(false, true, true)
+                        .HasDatabaseName("ix_transactions_user_id_posted_on_id");
+
                     b.ToTable("transactions", null, t =>
                         {
                             t.HasCheckConstraint("ck_transactions_amount_nonzero", "amount <> 0");

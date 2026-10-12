@@ -23,6 +23,10 @@ public class TransactionConfiguration : IEntityTypeConfiguration<Transaction>
 
         b.HasIndex(x => new { x.AccountId, x.PostedOn }).IsDescending(false, true);
 
+        // The cross-account "newest first" list: keyset pagination walks this index in order,
+        // so a page costs the same however deep into the history it is.
+        b.HasIndex(x => new { x.UserId, x.PostedOn, x.Id }).IsDescending(false, true, true);
+
         // Re-importing a file is rejected; identical rows within one file are told
         // apart by ImportSeq. Nulls are distinct in Postgres, so manual entries
         // are unconstrained.
