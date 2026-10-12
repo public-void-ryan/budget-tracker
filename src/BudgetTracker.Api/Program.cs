@@ -1,8 +1,10 @@
 using System.Globalization;
+using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using BudgetTracker.Api.Accounts;
 using BudgetTracker.Api.Auth;
 using BudgetTracker.Api.Categories;
+using BudgetTracker.Api.Transactions;
 using BudgetTracker.Api.Data;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.RateLimiting;
@@ -28,6 +30,11 @@ builder.Services
     .ValidateOnStart();
 builder.Services.AddHostedService<ExpiredSessionPurger>();
 builder.Services.Configure<AuthRateLimitOptions>(builder.Configuration.GetSection(AuthRateLimitOptions.Section));
+
+// ASP.NET reads numbers from strings by default ("12.50" as 12.5). Amounts are documented as
+// JSON numbers, and quietly accepting strings would hide a client sending the wrong type.
+builder.Services.ConfigureHttpJsonOptions(options =>
+    options.SerializerOptions.NumberHandling = JsonNumberHandling.Strict);
 
 builder.Services.AddProblemDetails();
 builder.Services.AddOpenApi(options =>
@@ -99,6 +106,7 @@ app.MapGet("/health", () => Results.Ok(new { status = "ok" }))
 app.MapAuthEndpoints();
 app.MapCategoryEndpoints();
 app.MapAccountEndpoints();
+app.MapTransactionEndpoints();
 
 // Off unless switched on: appsettings.Development.json enables it for local work. Read from
 // app.Configuration (after Build) so every configuration source has been applied.

@@ -5,12 +5,12 @@ namespace BudgetTracker.Api.Validation;
 public static class TextRules
 {
     /// <summary>
-    /// A required single-line name: trimmed, 1 to <paramref name="maxLength"/> characters, no
+    /// Required single-line text (a name, a description): trimmed, 1 to <paramref name="maxLength"/> characters, no
     /// control characters (a name with a newline in it is junk, not intent). Length counts
     /// Unicode characters, matching how the database counts them, so 100 emoji fit a
     /// varchar(100) even though they are 200 UTF-16 units.
     /// </summary>
-    public static (string Value, IReadOnlyList<ValidationError> Errors) RequiredName(
+    public static (string Value, IReadOnlyList<ValidationError> Errors) RequiredText(
         string? raw, string field, int maxLength)
     {
         var value = (raw ?? "").Trim();

@@ -19,6 +19,10 @@ public static class ConstraintErrors
             ["ix_users_email"] = new(StatusCodes.Status409Conflict, "email.taken", "That email is already registered."),
             ["ix_accounts_user_id_name"] = new(
                 StatusCodes.Status409Conflict, "account.name_taken", "You already have an account with that name."),
+            ["fk_transactions_accounts_user_id_account_id"] = new(
+                StatusCodes.Status422UnprocessableEntity, "account.invalid", "That account does not exist."),
+            ["fk_transactions_categories_user_id_category_id"] = new(
+                StatusCodes.Status422UnprocessableEntity, "category.invalid", "That category does not exist."),
             ["ix_categories_user_id_name"] = new(
                 StatusCodes.Status409Conflict, "category.name_taken", "You already have a category with that name."),
         };

@@ -37,20 +37,25 @@ public class ApiDocumentationTests(PostgresFixture fixture) : ApiTest(fixture)
                 "DELETE /accounts/{id}",
                 "DELETE /categories/{id}",
                 "DELETE /me",
+                "DELETE /transactions/{id}",
                 "GET /accounts",
                 "GET /accounts/{id}",
                 "GET /categories",
                 "GET /categories/{id}",
                 "GET /health",
                 "GET /me",
+                "GET /transactions",
+                "GET /transactions/{id}",
                 "POST /accounts",
                 "POST /accounts/{id}/unarchive",
                 "POST /auth/login",
                 "POST /auth/logout",
                 "POST /auth/register",
                 "POST /categories",
+                "POST /transactions",
                 "PUT /accounts/{id}",
                 "PUT /categories/{id}",
+                "PUT /transactions/{id}",
             ],
             operations);
     }
@@ -85,6 +90,11 @@ public class ApiDocumentationTests(PostgresFixture fixture) : ApiTest(fixture)
     [InlineData("/auth/logout", "post")]
     [InlineData("/me", "get")]
     [InlineData("/me", "delete")]
+    [InlineData("/transactions", "get")]
+    [InlineData("/transactions", "post")]
+    [InlineData("/transactions/{id}", "get")]
+    [InlineData("/transactions/{id}", "put")]
+    [InlineData("/transactions/{id}", "delete")]
     [InlineData("/accounts", "get")]
     [InlineData("/accounts", "post")]
     [InlineData("/accounts/{id}", "get")]

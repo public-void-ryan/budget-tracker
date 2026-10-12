@@ -81,7 +81,7 @@ public static class CategoryEndpoints
     private static async Task<IResult> Create(
         CategoryRequest request, ClaimsPrincipal user, BudgetDbContext db, CancellationToken ct)
     {
-        var (name, errors) = TextRules.RequiredName(request.Name, "name", NameMaxLength);
+        var (name, errors) = TextRules.RequiredText(request.Name, "name", NameMaxLength);
         if (errors.Count > 0)
         {
             return Problems.Validation(errors);
@@ -116,7 +116,7 @@ public static class CategoryEndpoints
             return Problems.NotFound();
         }
 
-        var (name, errors) = TextRules.RequiredName(request.Name, "name", NameMaxLength);
+        var (name, errors) = TextRules.RequiredText(request.Name, "name", NameMaxLength);
         if (errors.Count > 0)
         {
             return Problems.Validation(errors);

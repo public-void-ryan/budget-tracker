@@ -112,7 +112,7 @@ public static class AccountEndpoints
 
     private static (string Name, AccountType Type, IReadOnlyList<ValidationError> Errors) Validate(AccountRequest request)
     {
-        var (name, nameErrors) = TextRules.RequiredName(request.Name, "name", NameMaxLength);
+        var (name, nameErrors) = TextRules.RequiredText(request.Name, "name", NameMaxLength);
         var (type, typeErrors) = ParseType(request.Type);
         return (name, type, [.. nameErrors, .. typeErrors]);
     }

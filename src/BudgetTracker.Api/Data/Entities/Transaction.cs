@@ -8,7 +8,7 @@ public class Transaction
     // (UserId, CategoryId) make it impossible for the database to link a
     // transaction to another user's account or category.
     public required Guid UserId { get; init; }
-    public required Guid AccountId { get; init; }
+    public required Guid AccountId { get; set; }
     public Guid? CategoryId { get; set; }
 
     public DateOnly PostedOn { get; set; }
