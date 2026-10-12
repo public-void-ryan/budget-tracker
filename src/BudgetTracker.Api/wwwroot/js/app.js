@@ -2,6 +2,7 @@ import { api, describe, session, sessionExpired } from "./api.js";
 import { h, clear } from "./dom.js";
 import { authView } from "./views/auth.js";
 import { homeView } from "./views/home.js";
+import { importView } from "./views/import.js";
 import { setupView } from "./views/setup.js";
 import { transactionsView } from "./views/transactions.js";
 
@@ -14,6 +15,7 @@ const who = document.getElementById("who");
 const routes = [
   ["#/", "Overview", homeView],
   ["#/transactions", "Transactions", transactionsView],
+  ["#/import", "Import", importView],
   ["#/setup", "Accounts and categories", setupView],
 ];
 

@@ -35,8 +35,9 @@ export class ApiError extends Error {
     super(problem?.title ?? `Request failed (${status}).`);
     this.status = status;
     this.code = problem?.code ?? null;
-    this.fields = problem?.errors ?? {};
+    this.fields = problem?.errors && !Array.isArray(problem.errors) ? problem.errors : {};
     this.fieldCodes = problem?.codes ?? {};
+    this.problem = problem;
   }
 }
 
