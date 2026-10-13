@@ -42,6 +42,7 @@ public sealed record TransactionResponse(
 /// <param name="Cursor">The nextCursor of the previous page. Opaque.</param>
 /// <param name="From">Earliest posted date to include, as yyyy-MM-dd.</param>
 /// <param name="To">Latest posted date to include, as yyyy-MM-dd.</param>
+/// <param name="Uncategorized">true: only transactions with no category; false: only those that have one. Cannot be combined with categoryId.</param>
 public sealed record TransactionQuery(
     int? Limit,
     string? Cursor,
@@ -49,7 +50,8 @@ public sealed record TransactionQuery(
     Guid? CategoryId,
     string? From,
     string? To,
-    bool? IsTransfer);
+    bool? IsTransfer,
+    bool? Uncategorized = null);
 
 public static class TransactionEndpoints
 {
@@ -211,6 +213,13 @@ public static class TransactionEndpoints
             errors.Add(new("to", "to.before_from", "To must not be before from."));
         }
 
+        // "No category" and "this category" cannot both hold; say so instead of returning nothing.
+        if (query is { Uncategorized: true, CategoryId: not null })
+        {
+            errors.Add(new("uncategorized", "uncategorized.conflicts_with_category",
+                "Use either uncategorized=true or categoryId, not both."));
+        }
+
         if (errors.Count > 0)
         {
             return Problems.Validation(errors);
@@ -227,6 +236,11 @@ public static class TransactionEndpoints
         if (query.CategoryId is { } categoryId)
         {
             rows = rows.Where(t => t.CategoryId == categoryId);
+        }
+
+        if (query.Uncategorized is { } uncategorized)
+        {
+            rows = uncategorized ? rows.Where(t => t.CategoryId == null) : rows.Where(t => t.CategoryId != null);
         }
 
         if (from is { } fromDate)

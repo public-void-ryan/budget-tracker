@@ -268,6 +268,99 @@ public class TransactionListingTests(PostgresFixture fixture) : ApiTest(fixture)
     }
 
     [Fact]
+    public async Task Filtering_by_uncategorized()
+    {
+        var (token, _, _, _, _) = await SeedFilterDataAsync();
+
+        var page = await ListAsync(token, "?uncategorized=true");
+
+        Assert.Equal(["a-none-3"], Descriptions(page));
+    }
+
+    [Fact]
+    public async Task Filtering_by_categorized_is_the_complement()
+    {
+        var (token, _, _, _, _) = await SeedFilterDataAsync();
+
+        var page = await ListAsync(token, "?uncategorized=false");
+
+        Assert.Equal(["b-y-4-transfer", "b-x-2", "a-y-2", "a-x-1"], Descriptions(page));
+    }
+
+    [Fact]
+    public async Task Uncategorized_combines_with_the_other_filters()
+    {
+        var (token, a, b, _, _) = await SeedFilterDataAsync();
+
+        Assert.Equal(["a-none-3"], Descriptions(await ListAsync(token, $"?uncategorized=true&accountId={a.Id}")));
+        Assert.Empty(Descriptions(await ListAsync(token, $"?uncategorized=true&accountId={b.Id}")));
+        Assert.Equal(["a-none-3"], Descriptions(await ListAsync(token, "?uncategorized=true&from=2026-10-03&to=2026-10-03")));
+        Assert.Empty(Descriptions(await ListAsync(token, "?uncategorized=true&isTransfer=true")));
+    }
+
+    [Fact]
+    public async Task Uncategorized_pages_by_keyset_like_any_other_filter()
+    {
+        var (user, token) = await CreateUserWithSessionAsync();
+        var account = await AddAccountAsync(user);
+        var category = await AddCategoryAsync(user, "Food");
+        for (var i = 1; i <= 7; i++)
+        {
+            await AddAsync(user, account, $"2026-10-{i:00}", $"none-{i}");
+            await AddAsync(user, account, $"2026-10-{i:00}", $"food-{i}", category);
+        }
+
+        var seen = new List<string>();
+        string? cursor = null;
+        do
+        {
+            var page = await ListAsync(token, $"?uncategorized=true&limit=3{(cursor is null ? "" : $"&cursor={cursor}")}");
+            seen.AddRange(Descriptions(page));
+            cursor = NextCursor(page);
+        }
+        while (cursor is not null);
+
+        Assert.Equal(7, seen.Count);
+        Assert.All(seen, d => Assert.StartsWith("none-", d));
+        Assert.Equal(seen.Distinct().Count(), seen.Count);
+    }
+
+    [Fact]
+    public async Task Uncategorized_together_with_a_category_is_refused()
+    {
+        var (token, _, _, x, _) = await SeedFilterDataAsync();
+
+        var response = await SendAsync(HttpMethod.Get, $"/transactions?uncategorized=true&categoryId={x.Id}", token);
+
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("uncategorized.conflicts_with_category",
+            (await ReadJsonAsync(response)).GetProperty("codes").GetProperty("uncategorized")[0].GetString());
+    }
+
+    [Fact]
+    public async Task Uncategorized_false_with_a_category_is_allowed_and_redundant()
+    {
+        var (token, _, _, x, _) = await SeedFilterDataAsync();
+
+        var page = await ListAsync(token, $"?uncategorized=false&categoryId={x.Id}");
+
+        Assert.Equal(["b-x-2", "a-x-1"], Descriptions(page));
+    }
+
+    [Fact]
+    public async Task Uncategorized_never_shows_another_users_transactions()
+    {
+        var (_, aliceToken) = await CreateUserWithSessionAsync("alice@example.com");
+        var (bob, _) = await CreateUserWithSessionAsync("bob@example.com");
+        var bobsAccount = await AddAccountAsync(bob);
+        await AddAsync(bob, bobsAccount, "2026-10-01", "bobs-uncategorized");
+
+        var page = await ListAsync(aliceToken, "?uncategorized=true");
+
+        Assert.Empty(Descriptions(page));
+    }
+
+    [Fact]
     public async Task The_date_range_is_inclusive_at_both_ends()
     {
         var (token, _, _, _, _) = await SeedFilterDataAsync();
