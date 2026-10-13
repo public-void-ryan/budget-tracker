@@ -26,6 +26,7 @@ const routes = [
 ];
 
 let user = null;
+let docsAvailable = false;
 
 /** The route path for the address bar: /ui and /ui/ are the overview, other trailing slashes are ignored. */
 function currentPath() {
@@ -45,8 +46,18 @@ function upgradeLegacyHash() {
   history.replaceState(null, "", path === "/" ? "/" : `/ui${path}`);
 }
 
+// The API explorer is only served when the deployment turns it on; offer the link only then.
+async function probeDocs() {
+  try {
+    docsAvailable = (await fetch("/openapi/v1.json")).ok;   // GET: the endpoint does not answer HEAD
+  } catch {
+    docsAvailable = false;
+  }
+}
+
 async function start() {
   upgradeLegacyHash();
+  await probeDocs();
   if (session.token) {
     try {
       user = await api("GET", "/me");
@@ -79,7 +90,9 @@ function renderRoute() {
   const path = currentPath();
   const route = routes.find(([p]) => p === path);
   const view = route ? route[2] : notFoundView;
-  clear(nav, routes.map(([p, label]) => h("a", { href: p, "aria-current": p === path ? "page" : false }, label)));
+  clear(nav,
+    routes.map(([p, label]) => h("a", { href: p, "aria-current": p === path ? "page" : false }, label)),
+    docsAvailable ? h("a", { href: "/scalar/v1", target: "_blank", rel: "noopener" }, "API docs") : null);
   // Each render gets its own section, so a slow view that finishes after you navigated away
   // writes into a detached element instead of over the screen you are on now.
   const section = h("section");
