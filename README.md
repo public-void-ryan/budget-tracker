@@ -129,7 +129,7 @@ curl -X POST "localhost:5268/accounts/<account id>/imports" -H "$A" \
 
 ### Web UI
 
-Run the app and open `http://localhost:5268/`. The UI is served by the API itself from `wwwroot/`, so there is one thing to deploy, no CORS, and no build step: plain ES modules, no framework and no npm. Screens: Overview (budget against actual for a month), Transactions (filters, paging, add, recategorize, delete), Import (preview, then commit), Budgets (set, remove, copy last month), Rules (add, reorder, test a description, preview and apply) and Accounts and categories.
+Run the app and open `http://localhost:5268/`. The UI is served by the API itself from `wwwroot/`, so there is one thing to deploy, no CORS, and no build step: plain ES modules, no framework and no npm. Screens have clean addresses (`/` for the overview, `/ui/transactions`, `/ui/import`, `/ui/budgets`, `/ui/rules`, `/ui/setup`). They live under `/ui/` because the API owns the bare paths (`GET /transactions` is JSON); the server answers any `/ui/...` address with the page and a small History API router takes over, with back, forward, reload and deep links (including through login) all working. Old `#/screen` links are upgraded. Screens: Overview (budget against actual for a month), Transactions (filters, paging, add, recategorize, delete), Import (preview, then commit), Budgets (set, remove, copy last month), Rules (add, reorder, test a description, preview and apply) and Accounts and categories.
 
 ### API explorer
 
