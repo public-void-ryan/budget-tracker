@@ -58,6 +58,7 @@ public sealed class AppFixture : IAsyncLifetime
             {
                 ["ConnectionStrings:Default"] = connection,
                 ["Registration:Enabled"] = "true",
+                ["Documentation:Enabled"] = "true",
                 ["RateLimiting:Auth:PermitLimit"] = "10000",
             }));
         });

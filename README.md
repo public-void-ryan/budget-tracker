@@ -133,7 +133,7 @@ Run the app and open `http://localhost:5268/`. The UI is served by the API itsel
 
 ### API explorer
 
-With `Documentation:Enabled` the app serves the OpenAPI document at `/openapi/v1.json` and the Scalar explorer at `/scalar/v1`. Both are off by default and on in Development, so the public demo does not expose them. Tests pin the document's content: every endpoint, every documented status code, and which operations require the bearer scheme.
+With `Documentation:Enabled` the app serves the OpenAPI document at `/openapi/v1.json` and the Scalar explorer (a modern Swagger UI; it reads the same OpenAPI document) at `/scalar/v1`, and the web UI adds an "API docs" link to its navigation. It is off by default, on in Development, and on for the public demo: the document describes the API and exposes no data. To try the authenticated endpoints in the explorer, `POST /auth/login` there (or in the UI's session storage), then paste the token under Authentication → Bearer. Tests pin the document's content: every endpoint, every documented status code, and which operations require the bearer scheme.
 
 ### Configuration
 

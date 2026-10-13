@@ -167,6 +167,22 @@ public class RoutingTests(AppFixture app)
     }
 
     [Fact]
+    public async Task When_the_API_explorer_is_on_the_navigation_links_to_it_and_it_serves_the_spec()
+    {
+        var (page, _, _) = await SignedInAsync();
+
+        var link = page.GetByRole(AriaRole.Navigation).GetByRole(AriaRole.Link, new() { Name = "API docs", Exact = true });
+        await Assertions.Expect(link).ToHaveAttributeAsync("href", "/scalar/v1");
+        await Assertions.Expect(link).ToHaveAttributeAsync("target", "_blank");
+
+        var docs = await page.APIRequest.GetAsync("/scalar/v1");
+        Assert.True(docs.Ok);
+        var spec = await page.APIRequest.GetAsync("/openapi/v1.json");
+        Assert.True(spec.Ok);
+        Assert.Contains("\"/budgets/summary\"", await spec.TextAsync());
+    }
+
+    [Fact]
     public async Task The_import_pages_link_to_transactions_navigates_in_place()
     {
         var (page, api, _) = await SignedInAsync();
