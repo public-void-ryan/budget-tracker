@@ -131,6 +131,10 @@ app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 
+// The UI's screens live under /ui/ (the API owns the bare paths). Any address there gets the
+// page, and the client-side router takes it from there. Lowest priority, so it never shadows an endpoint.
+app.MapFallbackToFile("/ui/{**path}", "index.html", new StaticFileOptions { OnPrepareResponse = UiSecurityHeaders.Apply });
+
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }))
     .WithTags("Health")
     .WithName("Health")

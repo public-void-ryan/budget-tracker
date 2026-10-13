@@ -110,7 +110,7 @@ export async function importView(root) {
         summary.duplicates > 0 ? `, skipped ${summary.duplicates} already there` : "",
         summary.categorized > 0 ? `; ${summary.categorized} categorized by your rules` : "",
         summary.markedAsTransfer > 0 ? `; ${summary.markedAsTransfer} marked as transfers` : "", "."),
-      h("p", {}, h("a", { href: "#/transactions" }, "View transactions")));
+      h("p", {}, h("a", { href: "/ui/transactions" }, "View transactions")));
   }
 
   clear(root, h("h1", {}, "Import"), status.el, h("div", { class: "panel" }, form), result);
