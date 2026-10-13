@@ -69,6 +69,37 @@ public class BudgetFlowTests(AppFixture app)
     }
 
     [Fact]
+    public async Task Income_is_shown_apart_from_spending_and_the_net_accounts_for_both()
+    {
+        var (page, api) = await SignedInAsync();
+        var account = await api.AccountAsync("Everyday");
+        var rent = await api.CategoryAsync("Rent");
+        var groceries = await api.CategoryAsync("Groceries");
+        var salary = await api.CategoryAsync("Salary");
+        (await api.SendAsync(HttpMethod.Put, $"/budgets/2026-10/{rent}", new { amount = 1450 })).EnsureSuccessStatusCode();
+        await api.TransactionAsync(account, "2026-10-01", -1450m, "landlord", rent);
+        await api.TransactionAsync(account, "2026-10-03", -100m, "kroger", groceries);
+        await api.TransactionAsync(account, "2026-10-15", 3200m, "payroll", salary);
+        await api.TransactionAsync(account, "2026-10-16", 40m, "gift", null);
+        await GoToAsync(page, "Overview", "Overview");
+
+        await ChooseMonthAsync(page, "2026-10");
+
+        var spending = Summary(page);
+        await Assertions.Expect(spending).Not.ToContainTextAsync("Salary");   // not "negative spending"
+        var total = spending.GetByRole(AriaRole.Row).Filter(new() { HasText = "Total" });
+        await Assertions.Expect(total).ToContainTextAsync("1,450.00");   // budget
+        await Assertions.Expect(total).ToContainTextAsync("1,550.00");   // all spending
+        await Assertions.Expect(total).ToContainTextAsync("-100.00");    // budget minus spending
+
+        var income = page.GetByRole(AriaRole.Table, new() { Name = "Income received" });
+        await Assertions.Expect(income.GetByRole(AriaRole.Row).Filter(new() { HasText = "Salary" })).ToContainTextAsync("3,200.00");
+        await Assertions.Expect(income.GetByRole(AriaRole.Row).Filter(new() { HasText = "Uncategorized" })).ToContainTextAsync("40.00");
+        await Assertions.Expect(income.GetByRole(AriaRole.Row).Filter(new() { HasText = "Total" })).ToContainTextAsync("3,240.00");
+        await Assertions.Expect(page.Locator("p.net")).ToContainTextAsync("Net for the month: 1,690.00");   // 3,240 - 1,550
+    }
+
+    [Fact]
     public async Task Changing_the_month_changes_the_numbers()
     {
         var (page, api) = await SignedInAsync();

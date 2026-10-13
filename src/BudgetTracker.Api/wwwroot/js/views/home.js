@@ -28,11 +28,13 @@ export async function homeView(root) {
   }
 
   function show(s) {
-    if (s.categories.length === 0 && s.uncategorizedSpent === 0) {
+    if (s.categories.length === 0 && s.income.length === 0 && s.uncategorizedSpent === 0 && s.uncategorizedReceived === 0) {
       clear(output, h("p", { class: "muted" }, "Nothing to show for this month. Import transactions or set budgets to see your spending here."));
       return;
     }
+    const t = s.totals;
     clear(output,
+      h("h2", {}, "Spending"),
       h("table", { "aria-label": "Budget against actual" },
         h("thead", {}, h("tr", {}, h("th", {}, "Category"),
           ["Budget", "Spent", "Remaining"].map((c) => h("th", { class: "num" }, c)), h("th", {}, "Progress"))),
@@ -43,9 +45,24 @@ export async function homeView(root) {
                 h("td", { class: "num" }, formatMoney(s.uncategorizedSpent)), h("td", { class: "num" }, "–"), h("td"))
             : null),
         h("tfoot", {}, h("tr", {}, h("th", {}, "Total"),
-          h("th", { class: "num" }, formatMoney(s.totals.budgeted)), h("th", { class: "num" }, formatMoney(s.totals.spent)),
-          h("th", { class: "num" }, formatMoney(s.totals.budgeted - s.totals.spent)), h("th")))),
-      h("p", { class: "muted" }, "Spent is money out minus refunds; transfers are left out. A category with income shows a negative amount."));
+          h("th", { class: "num" }, formatMoney(t.budgeted)), h("th", { class: "num" }, formatMoney(t.spent)),
+          h("th", { class: "num" }, formatMoney(t.remaining)), h("th")))),
+      s.income.length > 0 || s.uncategorizedReceived !== 0
+        ? [
+          h("h2", {}, "Income"),
+          h("table", { "aria-label": "Income received" },
+            h("thead", {}, h("tr", {}, h("th", {}, "Category"), h("th", { class: "num" }, "Received"))),
+            h("tbody", {},
+              s.income.map((i) => h("tr", {}, h("td", {}, i.categoryName), h("td", { class: "num" }, formatMoney(i.received)))),
+              s.uncategorizedReceived !== 0
+                ? h("tr", {}, h("td", {}, "Uncategorized"), h("td", { class: "num" }, formatMoney(s.uncategorizedReceived)))
+                : null),
+            h("tfoot", {}, h("tr", {}, h("th", {}, "Total"), h("th", { class: "num" }, formatMoney(t.received))))),
+        ]
+        : null,
+      h("p", { class: "net" }, "Net for the month: ", h("strong", {}, formatMoney(t.net)),
+        h("span", { class: "muted" }, ` (${formatMoney(t.received)} received − ${formatMoney(t.spent)} spent)`)),
+      h("p", { class: "muted" }, "Spent is money out minus refunds; transfers are left out. Money in to a category with no budget counts as income."));
   }
 
   function row(c) {
