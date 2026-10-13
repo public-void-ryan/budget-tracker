@@ -32,10 +32,12 @@ public static class BudgetEndpoints
             .WithName("BudgetSummary")
             .WithSummary("Budget versus actual for a month.")
             .WithDescription(
-                "One row per category that has a budget or any activity that month, plus the uncategorized "
-                + "total and overall totals. Spent is net outflow: refunds reduce it, and an income category "
-                + "shows a negative number. Transfers are excluded; archived accounts' transactions are "
-                + "included. The totals are the sum of the rows, so nothing is hidden.")
+                "Expenses: one row per category that has a budget or spending that month, with spent "
+                + "(net outflow; refunds reduce it), remaining and an over flag. Income: categories with no "
+                + "budget that took in more than they paid out, shown as received. Uncategorized money out and "
+                + "in each get their own figure. Totals: budgeted, spent, remaining (budgeted minus all "
+                + "spent), received and net (received minus spent). Transfers are excluded; archived "
+                + "accounts' transactions are included. The totals are the sum of the rows, so nothing is hidden.")
             .Produces<BudgetSummary>()
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status401Unauthorized);
@@ -138,11 +140,18 @@ public static class BudgetEndpoints
         var sums = await db.Transactions.AsNoTracking()
             .Where(t => t.UserId == userId && t.PostedOn >= firstDay && t.PostedOn < nextMonth && !t.IsTransfer)
             .GroupBy(t => t.CategoryId)
-            .Select(g => new { CategoryId = g.Key, Net = g.Sum(t => t.Amount) })
+            .Select(g => new
+            {
+                CategoryId = g.Key,
+                Net = g.Sum(t => t.Amount),
+                Out = g.Sum(t => t.Amount < 0 ? -t.Amount : 0m),
+                In = g.Sum(t => t.Amount > 0 ? t.Amount : 0m),
+            })
             .ToListAsync(ct);
 
         var net = sums.Where(x => x.CategoryId is not null).ToDictionary(x => x.CategoryId!.Value, x => x.Net);
-        var uncategorizedNet = sums.Where(x => x.CategoryId is null).Sum(x => x.Net);
+        var uncategorizedOut = sums.Where(x => x.CategoryId is null).Sum(x => x.Out);
+        var uncategorizedIn = sums.Where(x => x.CategoryId is null).Sum(x => x.In);
 
         var wanted = budgeted.Keys.Concat(net.Keys).Distinct().ToList();
         var categories = await db.Categories.AsNoTracking()
@@ -151,7 +160,7 @@ public static class BudgetEndpoints
             .Select(c => new CategoryRef(c.Id, c.Name))
             .ToListAsync(ct);
 
-        return Results.Ok(BudgetSummaryBuilder.Build(MonthRules.Format(firstDay), categories, budgeted, net, uncategorizedNet));
+        return Results.Ok(BudgetSummaryBuilder.Build(MonthRules.Format(firstDay), categories, budgeted, net, uncategorizedOut, uncategorizedIn));
     }
 
     private static async Task<IResult> Put(

@@ -81,7 +81,7 @@ public class BudgetSummaryTests(PostgresFixture fixture) : ApiTest(fixture)
         var summary = await SummaryAsync(w.Token);
 
         Assert.Equal("2026-10", summary.GetProperty("month").GetString());
-        Assert.Equal(["Dining", "Fun", "Groceries", "Rent", "Salary"],
+        Assert.Equal(["Dining", "Fun", "Groceries", "Rent"],
             summary.GetProperty("categories").EnumerateArray().Select(c => c.GetProperty("categoryName").GetString()!).ToArray());
 
         var diningRow = Row(summary, "Dining");
@@ -92,12 +92,17 @@ public class BudgetSummaryTests(PostgresFixture fixture) : ApiTest(fixture)
         Assert.Equal((null, 40m, null, false), (Money(funRow, "budgeted"), Money(funRow, "spent"), Money(funRow, "remaining"), funRow.GetProperty("over").GetBoolean()));
         var groceriesRow = Row(summary, "Groceries");
         Assert.Equal((300m, 0m, 300m), (Money(groceriesRow, "budgeted"), Money(groceriesRow, "spent"), Money(groceriesRow, "remaining")));
-        Assert.Equal(-2500m, Money(Row(summary, "Salary"), "spent"));
+        var incomeRows = summary.GetProperty("income").EnumerateArray().ToArray();
+        var salaryRow = Assert.Single(incomeRows);
+        Assert.Equal(("Salary", 2500m), (salaryRow.GetProperty("categoryName").GetString(), salaryRow.GetProperty("received").GetDecimal()));
 
         Assert.Equal(25m, summary.GetProperty("uncategorizedSpent").GetDecimal());
         var totals = summary.GetProperty("totals");
         Assert.Equal(1500m, totals.GetProperty("budgeted").GetDecimal());
-        Assert.Equal(1000m + 230m + 40m + 0m - 2500m + 25m, totals.GetProperty("spent").GetDecimal());
+        Assert.Equal(1000m + 230m + 40m + 0m + 25m, totals.GetProperty("spent").GetDecimal());
+        Assert.Equal(1500m - 1295m, totals.GetProperty("remaining").GetDecimal());
+        Assert.Equal(2500m, totals.GetProperty("received").GetDecimal());
+        Assert.Equal(2500m - 1295m, totals.GetProperty("net").GetDecimal());
     }
 
     [Fact]
@@ -110,12 +115,12 @@ public class BudgetSummaryTests(PostgresFixture fixture) : ApiTest(fixture)
         var summary = await SummaryAsync(w.Token);
 
         Assert.Equal(
-            ["categories", "month", "totals", "uncategorizedSpent"],
+            ["categories", "income", "month", "totals", "uncategorizedReceived", "uncategorizedSpent"],
             summary.EnumerateObject().Select(p => p.Name).Order(StringComparer.Ordinal).ToArray());
         Assert.Equal(
             ["budgeted", "categoryId", "categoryName", "over", "remaining", "spent"],
             summary.GetProperty("categories")[0].EnumerateObject().Select(p => p.Name).Order(StringComparer.Ordinal).ToArray());
-        Assert.Equal(["budgeted", "spent"], summary.GetProperty("totals").EnumerateObject().Select(p => p.Name).Order(StringComparer.Ordinal).ToArray());
+        Assert.Equal(["budgeted", "net", "received", "remaining", "spent"], summary.GetProperty("totals").EnumerateObject().Select(p => p.Name).Order(StringComparer.Ordinal).ToArray());
     }
 
     [Fact]
@@ -297,6 +302,7 @@ public class BudgetSummaryTests(PostgresFixture fixture) : ApiTest(fixture)
         while (cursor is not null);
 
         Assert.Equal(-listed, summary.GetProperty("totals").GetProperty("spent").GetDecimal());
+        Assert.Equal(listed, summary.GetProperty("totals").GetProperty("net").GetDecimal());
     }
 
     [Fact]
@@ -345,6 +351,33 @@ public class BudgetSummaryTests(PostgresFixture fixture) : ApiTest(fixture)
         var summary = await SummaryAsync(w.Token);
         Assert.Equal(0m, summary.GetProperty("uncategorizedSpent").GetDecimal());
         Assert.Equal(50m, Money(Row(summary, "Food"), "spent"));
+    }
+
+    [Fact]
+    public async Task Uncategorized_money_in_is_received_and_does_not_reduce_spending()
+    {
+        var w = await SetUpAsync();
+        await AddTransactionsAsync(w, ("2026-10-05", -20m, null, false), ("2026-10-06", 300m, null, false));
+
+        var summary = await SummaryAsync(w.Token);
+
+        Assert.Equal((20m, 300m), (summary.GetProperty("uncategorizedSpent").GetDecimal(), summary.GetProperty("uncategorizedReceived").GetDecimal()));
+        var totals = summary.GetProperty("totals");
+        Assert.Equal((20m, 300m, 280m), (totals.GetProperty("spent").GetDecimal(), totals.GetProperty("received").GetDecimal(), totals.GetProperty("net").GetDecimal()));
+    }
+
+    [Fact]
+    public async Task A_category_with_a_budget_is_never_reclassified_as_income()
+    {
+        var w = await SetUpAsync();
+        var salary = await CategoryAsync(w.User, "Salary");
+        await SetBudgetAsync(w.Token, "2026-10", salary, 10m);
+        await AddTransactionsAsync(w, ("2026-10-05", 2500m, salary, false));
+
+        var summary = await SummaryAsync(w.Token);
+
+        Assert.Empty(summary.GetProperty("income").EnumerateArray());
+        Assert.Equal(-2500m, Money(Row(summary, "Salary"), "spent"));
     }
 
     [Theory]

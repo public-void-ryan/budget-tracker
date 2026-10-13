@@ -14,8 +14,8 @@ public class BudgetSummaryBuilderTests
 
     private static BudgetSummary Build(
         CategoryRef[] categories, Dictionary<Guid, decimal>? budgeted = null, Dictionary<Guid, decimal>? net = null,
-        decimal uncategorizedNet = 0m) =>
-        BudgetSummaryBuilder.Build("2026-10", categories, budgeted ?? [], net ?? [], uncategorizedNet);
+        decimal uncategorizedOut = 0m, decimal uncategorizedIn = 0m) =>
+        BudgetSummaryBuilder.Build("2026-10", categories, budgeted ?? [], net ?? [], uncategorizedOut, uncategorizedIn);
 
     [Fact]
     public void A_category_under_budget_shows_what_is_left()
@@ -71,11 +71,42 @@ public class BudgetSummaryBuilderTests
     }
 
     [Fact]
-    public void Income_in_a_category_shows_as_negative_spending()
+    public void Money_in_with_no_budget_is_income_not_negative_spending()
     {
-        var row = Assert.Single(Build([Salary], net: D((Salary, 2500m))).Categories);
+        var summary = Build([Salary], net: D((Salary, 2500m)));
 
-        Assert.Equal(-2500m, row.Spent);
+        var row = Assert.Single(summary.Income);
+        Assert.Equal(("Salary", 2500m), (row.CategoryName, row.Received));
+        Assert.Empty(summary.Categories);
+        Assert.Equal((0m, 0m, 2500m, 2500m), (summary.Totals.Budgeted, summary.Totals.Spent, summary.Totals.Received, summary.Totals.Net));
+    }
+
+    [Fact]
+    public void A_budgeted_category_stays_an_expense_row_even_when_refunds_outweigh_purchases()
+    {
+        var summary = Build([Dining], D((Dining, 100m)), D((Dining, 40m)));
+
+        var row = Assert.Single(summary.Categories);
+        Assert.Equal((-40m, 140m, false), (row.Spent, row.Remaining, row.Over));
+        Assert.Empty(summary.Income);
+    }
+
+    [Fact]
+    public void A_category_that_nets_to_exactly_zero_is_an_expense_row_not_income()
+    {
+        var summary = Build([Dining], net: D((Dining, 0m)));
+
+        Assert.Single(summary.Categories);
+        Assert.Empty(summary.Income);
+    }
+
+    [Fact]
+    public void Uncategorized_money_in_is_reported_as_received_not_as_negative_spending()
+    {
+        var summary = Build([], uncategorizedIn: 75m);
+
+        Assert.Equal((0m, 75m), (summary.UncategorizedSpent, summary.UncategorizedReceived));
+        Assert.Equal((0m, 75m, 75m), (summary.Totals.Spent, summary.Totals.Received, summary.Totals.Net));
     }
 
     [Fact]
@@ -105,24 +136,36 @@ public class BudgetSummaryBuilderTests
     [Fact]
     public void Uncategorized_spending_is_reported_as_a_positive_figure()
     {
-        var summary = Build([], uncategorizedNet: -25m);
+        var summary = Build([], uncategorizedOut: 25m);
 
         Assert.Equal(25m, summary.UncategorizedSpent);
         Assert.Empty(summary.Categories);
     }
 
     [Fact]
-    public void The_totals_add_up_to_the_rows_and_the_uncategorized_figure()
+    public void Uncategorized_money_out_and_in_are_kept_apart_not_netted()
+    {
+        var summary = Build([], uncategorizedOut: 20m, uncategorizedIn: 300m);
+
+        Assert.Equal((20m, 300m), (summary.UncategorizedSpent, summary.UncategorizedReceived));
+        Assert.Equal((20m, 300m, 280m), (summary.Totals.Spent, summary.Totals.Received, summary.Totals.Net));
+    }
+
+    [Fact]
+    public void The_totals_add_up_to_the_rows_and_the_uncategorized_figures()
     {
         var summary = Build(
             [Dining, Rent, Salary],
             D((Rent, 1000m), (Dining, 200m)),
             D((Rent, -1000m), (Dining, -230m), (Salary, 2500m)),
-            uncategorizedNet: -25m);
+            uncategorizedOut: 25m);
 
         Assert.Equal(1200m, summary.Totals.Budgeted);
         Assert.Equal(summary.Categories.Sum(c => c.Spent) + summary.UncategorizedSpent, summary.Totals.Spent);
-        Assert.Equal(1000m + 230m - 2500m + 25m, summary.Totals.Spent);
+        Assert.Equal(1000m + 230m + 25m, summary.Totals.Spent);
+        Assert.Equal(1200m - 1255m, summary.Totals.Remaining);
+        Assert.Equal(2500m, summary.Totals.Received);
+        Assert.Equal(2500m - 1255m, summary.Totals.Net);
     }
 
     [Fact]
@@ -138,8 +181,9 @@ public class BudgetSummaryBuilderTests
     {
         var summary = Build([]);
 
-        Assert.Equal(("2026-10", 0m, 0m, 0m), (summary.Month, summary.UncategorizedSpent, summary.Totals.Budgeted, summary.Totals.Spent));
+        Assert.Equal(("2026-10", 0m, 0m, 0m, 0m, 0m), (summary.Month, summary.UncategorizedSpent, summary.Totals.Budgeted, summary.Totals.Spent, summary.Totals.Received, summary.Totals.Net));
         Assert.Empty(summary.Categories);
+        Assert.Empty(summary.Income);
     }
 
     [Fact]
