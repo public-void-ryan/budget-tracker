@@ -146,6 +146,7 @@ app.MapTransactionEndpoints();
 app.MapImportEndpoints();
 app.MapRuleEndpoints();
 app.MapBudgetEndpoints();
+app.MapDemoEndpoints(app.Configuration);
 
 // Off unless switched on: appsettings.Development.json enables it for local work. Read from
 // app.Configuration (after Build) so every configuration source has been applied.

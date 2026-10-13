@@ -4,7 +4,20 @@ import { clear, h } from "../dom.js";
 /** Login and registration on one screen. `onSignedIn` runs once a session exists. */
 export function authView(root, { onSignedIn }) {
   let registering = false;
+  let demo = null;
+  let fields = null;
   render();
+
+  // On the public demo the server offers the shared account's credentials; fill them in.
+  fetch("/demo")
+    .then((response) => (response.ok ? response.json() : null))
+    .then((credentials) => {
+      // Never overwrite something the visitor already started typing.
+      if (!credentials || fields.email.value || fields.password.value) return;
+      demo = credentials;
+      render();
+    })
+    .catch(() => {});
 
   function render(message = "") {
     const email = h("input", { id: "email", name: "email", type: "email", autocomplete: "email", required: true });
@@ -14,6 +27,11 @@ export function authView(root, { onSignedIn }) {
     });
     const error = h("p", { class: "error", role: "alert" }, message);
     const submit = h("button", { type: "submit" }, registering ? "Create account" : "Log in");
+    fields = { email, password };
+    if (demo && !registering) {
+      email.value = demo.email;
+      password.value = demo.password;
+    }
 
     const form = h(
       "form",
@@ -45,14 +63,21 @@ export function authView(root, { onSignedIn }) {
     clear(
       root,
       h("h1", {}, registering ? "Create an account" : "Log in"),
+      demo
+        ? h("p", { class: "muted", role: "note" },
+            "This is a demo. Everyone shares one account, already filled in below, and its data is reset every night.")
+        : null,
       h("div", { class: "panel" }, form),
-      h(
-        "p",
-        {},
-        registering ? "Already have an account? " : "New here? ",
-        h("button", { type: "button", class: "link", onclick: () => { registering = !registering; render(); } },
-          registering ? "Log in" : "Create an account"),
-      ),
+      // The demo has no sign-up: registration is off there.
+      demo
+        ? null
+        : h(
+          "p",
+          {},
+          registering ? "Already have an account? " : "New here? ",
+          h("button", { type: "button", class: "link", onclick: () => { registering = !registering; render(); } },
+            registering ? "Log in" : "Create an account"),
+        ),
     );
     email.focus();
   }
