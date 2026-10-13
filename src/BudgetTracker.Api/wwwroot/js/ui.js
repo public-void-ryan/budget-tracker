@@ -77,3 +77,14 @@ export function monthPicker(onChange) {
   });
   return input;
 }
+
+/**
+ * A small label with a plain-language explanation: the tooltip for mouse users, and the same text
+ * hidden-but-readable for screen readers (a title attribute alone is not reliably announced).
+ */
+export function pill(text, explanation) {
+  return h("span", { class: "pill explained", title: explanation },
+    text, h("span", { class: "sr-only" }, ` (${explanation})`));
+}
+
+export const TRANSFER_TIP = "Moves money between your own accounts, so it is not counted as spending or income.";

@@ -1,6 +1,6 @@
 import { api, describe } from "../api.js";
 import { clear, h } from "../dom.js";
-import { confirmButton, field, statusLine } from "../ui.js";
+import { confirmButton, field, pill, statusLine } from "../ui.js";
 
 export async function setupView(root) {
   const status = statusLine();
@@ -33,8 +33,12 @@ export async function setupView(root) {
       { ariaLabel: `Delete category ${c.name}` }));
 
   const accountRow = (a) => h("li", {}, a.name, " ", h("span", { class: "pill" }, a.type),
-    a.invertSign ? h("span", { class: "pill" }, "inverted sign") : null,
-    a.archivedAt ? h("span", { class: "pill" }, "archived") : null, " ",
+    a.invertSign
+      ? pill("purchases shown positive", "This account's CSV exports list purchases as positive numbers, as many credit cards do. Imports flip the sign so money out is always stored as negative.")
+      : null,
+    a.archivedAt
+      ? pill("archived", "Hidden from lists and closed to new transactions. Its history is kept, and you can reopen it.")
+      : null, " ",
     a.archivedAt
       ? h("button", { type: "button", class: "secondary", "aria-label": `Reopen account ${a.name}`,
           onclick: () => run(() => api("POST", `/accounts/${a.id}/unarchive`), `Reopened ${a.name}.`) }, "Reopen")
@@ -69,7 +73,8 @@ export async function setupView(root) {
         }, "Account added.");
       } },
       field("New account", accountName), field("Type", accountType),
-      h("label", {}, "Purchases appear as positive numbers in its exports", invert),
+      h("label", {}, "Its CSV exports show purchases as positive numbers",
+        invert, h("span", { class: "muted" }, "Tick for most credit cards: imports will flip the sign so money out is stored as negative.")),
       h("button", { type: "submit" }, "Add account"))));
 
   await refresh();

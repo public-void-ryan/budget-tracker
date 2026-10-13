@@ -1,8 +1,9 @@
 import { api, describe } from "../api.js";
 import { clear, formatMoney, h } from "../dom.js";
-import { confirmButton, field, parseAmount, statusLine, today } from "../ui.js";
+import { confirmButton, field, parseAmount, pill, statusLine, today, TRANSFER_TIP } from "../ui.js";
 
 const PAGE = 25;
+const UNCATEGORIZED = "__uncategorized__";   // a filter choice, never a real category id
 
 export async function transactionsView(root) {
   const status = statusLine();
@@ -28,6 +29,7 @@ export async function transactionsView(root) {
     account: h("select", { name: "filter-account" }, h("option", { value: "" }, "All accounts"),
       accounts.map((a) => h("option", { value: a.id }, a.name))),
     category: h("select", { name: "filter-category" }, h("option", { value: "" }, "All categories"),
+      h("option", { value: UNCATEGORIZED }, "Uncategorized"),
       categories.map((c) => h("option", { value: c.id }, c.name))),
     from: h("input", { type: "date", name: "filter-from" }),
     to: h("input", { type: "date", name: "filter-to" }),
@@ -36,7 +38,8 @@ export async function transactionsView(root) {
   function query() {
     const q = new URLSearchParams({ limit: String(PAGE) });
     if (filters.account.value) q.set("accountId", filters.account.value);
-    if (filters.category.value) q.set("categoryId", filters.category.value);
+    if (filters.category.value === UNCATEGORIZED) q.set("uncategorized", "true");
+    else if (filters.category.value) q.set("categoryId", filters.category.value);
     if (filters.from.value) q.set("from", filters.from.value);
     if (filters.to.value) q.set("to", filters.to.value);
     if (cursor) q.set("cursor", cursor);
@@ -63,7 +66,7 @@ export async function transactionsView(root) {
   }
 
   function row(t) {
-    const description = h("td", {}, t.description, t.isTransfer ? [" ", h("span", { class: "pill" }, "transfer")] : null);
+    const description = h("td", {}, t.description, t.isTransfer ? [" ", pill("transfer", TRANSFER_TIP)] : null);
     const select = h("select", {
       "aria-label": `Category for ${t.description}`,
       onchange: async () => {

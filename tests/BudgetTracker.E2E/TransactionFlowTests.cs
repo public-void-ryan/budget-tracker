@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Microsoft.Playwright;
 
 namespace BudgetTracker.E2E;
@@ -137,6 +138,68 @@ public class TransactionFlowTests(AppFixture app)
         await Assertions.Expect(rows).ToHaveCountAsync(6);   // evens 10..20
         await Assertions.Expect(rows.First).ToContainTextAsync("item 20");
         await Assertions.Expect(rows.Last).ToContainTextAsync("item 10");
+    }
+
+    [Fact]
+    public async Task The_uncategorized_filter_shows_only_transactions_with_no_category()
+    {
+        var (page, api) = await SignedInAsync();
+        var account = await api.AccountAsync("Everyday");
+        var other = await api.AccountAsync("Other");
+        var food = await api.CategoryAsync("Food");
+        await api.TransactionAsync(account, "2026-10-01", -1m, "plain-one");
+        await api.TransactionAsync(account, "2026-10-02", -2m, "food-two", food);
+        await api.TransactionAsync(other, "2026-10-03", -3m, "plain-three");
+        await GoToAsync(page, "Transactions", "Transactions");
+        var rows = page.GetByRole(AriaRole.Row).Filter(new() { HasText = "plain-" }).Or(page.GetByRole(AriaRole.Row).Filter(new() { HasText = "food-" }));
+        await Assertions.Expect(rows).ToHaveCountAsync(3);
+
+        await page.Locator("select[name=filter-category]").SelectOptionAsync(new SelectOptionValue { Label = "Uncategorized" });
+        await page.GetByRole(AriaRole.Button, new() { Name = "Apply filters" }).ClickAsync();
+
+        await Assertions.Expect(rows).ToHaveCountAsync(2);
+        await Assertions.Expect(page.GetByRole(AriaRole.Row).Filter(new() { HasText = "food-two" })).ToHaveCountAsync(0);
+
+        // It combines with the account filter, and "All categories" brings everything back.
+        await page.Locator("select[name=filter-account]").SelectOptionAsync(new SelectOptionValue { Label = "Other" });
+        await page.GetByRole(AriaRole.Button, new() { Name = "Apply filters" }).ClickAsync();
+        await Assertions.Expect(rows).ToHaveCountAsync(1);
+        await Assertions.Expect(rows.First).ToContainTextAsync("plain-three");
+
+        await page.Locator("select[name=filter-account]").SelectOptionAsync(new SelectOptionValue { Label = "All accounts" });
+        await page.Locator("select[name=filter-category]").SelectOptionAsync(new SelectOptionValue { Label = "All categories" });
+        await page.GetByRole(AriaRole.Button, new() { Name = "Apply filters" }).ClickAsync();
+        await Assertions.Expect(rows).ToHaveCountAsync(3);
+    }
+
+    [Fact]
+    public async Task A_transfer_badge_explains_itself()
+    {
+        var (page, api) = await SignedInAsync();
+        var account = await api.AccountAsync("Everyday");
+        (await api.SendAsync(HttpMethod.Post, "/transactions", new
+        {
+            accountId = account, postedOn = "2026-10-01", amount = -600m, description = "card payment", isTransfer = true,
+        })).EnsureSuccessStatusCode();
+        await GoToAsync(page, "Transactions", "Transactions");
+
+        var badge = page.Locator("span.pill", new() { HasText = "transfer" });
+
+        await Assertions.Expect(badge).ToHaveAttributeAsync("title", new Regex("not counted as spending or income"));
+        await Assertions.Expect(badge).ToContainTextAsync("not counted as spending or income");   // screen-reader text
+    }
+
+    [Fact]
+    public async Task An_account_with_flipped_signs_is_labelled_in_plain_words_with_an_explanation()
+    {
+        var (page, api) = await SignedInAsync();
+        (await api.SendAsync(HttpMethod.Post, "/accounts", new { name = "Visa", type = "Credit", invertSign = true })).EnsureSuccessStatusCode();
+        await GoToAsync(page, "Accounts and categories", "Accounts and categories");
+
+        var badge = page.Locator("span.pill", new() { HasText = "purchases shown positive" });
+
+        await Assertions.Expect(badge).ToHaveAttributeAsync("title", new Regex("flip the sign"));
+        await Assertions.Expect(page.GetByText("inverted sign")).ToHaveCountAsync(0);
     }
 
     [Fact]

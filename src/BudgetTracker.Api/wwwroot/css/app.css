@@ -54,6 +54,7 @@ table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
 th { font-size: 0.85rem; color: var(--muted); font-weight: 600; }
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.pill.explained { cursor: help; border-style: dashed; }
 .error { color: var(--bad); }
 .ok { color: var(--good); }
 .pill { display: inline-block; font-size: 0.75rem; border: 1px solid var(--line); border-radius: 999px; padding: 0 0.5rem; color: var(--muted); }

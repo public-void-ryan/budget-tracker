@@ -1,6 +1,6 @@
 import { api, ApiError, describe } from "../api.js";
 import { clear, formatMoney, h } from "../dom.js";
-import { field, statusLine } from "../ui.js";
+import { field, pill, statusLine, TRANSFER_TIP } from "../ui.js";
 
 const SHOWN_ROWS = 500;
 const DATE_FORMATS = [
@@ -95,9 +95,11 @@ export async function importView(root) {
           h("th", { class: "num" }, "Stored amount"), h("th", { class: "num" }, "Amount in file"), h("th", {}, "Status"))),
         h("tbody", {}, rows.map((r) => h("tr", {},
           h("td", {}, r.row), h("td", {}, r.postedOn), h("td", {}, r.description),
-          h("td", {}, r.isTransfer ? h("span", { class: "pill" }, "transfer") : categoryName.get(r.categoryId) ?? ""),
+          h("td", {}, r.isTransfer ? pill("transfer", TRANSFER_TIP) : categoryName.get(r.categoryId) ?? ""),
           h("td", { class: "num" }, formatMoney(r.amount)), h("td", { class: "num" }, formatMoney(r.fileAmount)),
-          h("td", {}, h("span", { class: "pill" }, r.status)))))),
+          h("td", {}, r.status === "duplicate"
+            ? pill(r.status, "Already imported earlier, so this row is skipped and nothing is added twice.")
+            : pill(r.status, "Not imported before; this row will be added.")))))),
       summary.rows.length > rows.length ? h("p", { class: "muted" }, `Showing the first ${rows.length} rows.`) : null,
       confirm);
   }
