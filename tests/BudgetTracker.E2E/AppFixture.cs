@@ -25,6 +25,8 @@ public sealed class AppFixture : IAsyncLifetime
 
     public string BaseUrl { get; private set; } = null!;
 
+    public string ConnectionString { get; private set; } = null!;
+
     public async Task InitializeAsync()
     {
         // Starting can fail transiently (a previous run's cleanup container still holding a port).
@@ -45,6 +47,7 @@ public sealed class AppFixture : IAsyncLifetime
         }
 
         var connection = _container.GetConnectionString();
+        ConnectionString = connection;
         await using (var context = new BudgetDbContext(
             new DbContextOptionsBuilder<BudgetDbContext>().UseNpgsql(connection).UseSnakeCaseNamingConvention().Options))
         {
@@ -62,7 +65,7 @@ public sealed class AppFixture : IAsyncLifetime
                 ["RateLimiting:Auth:PermitLimit"] = "10000",
             }));
         });
-        _factory.UseKestrel(0);
+        _factory.UseKestrel(options => options.Listen(System.Net.IPAddress.Loopback, FreePort()));
         _factory.StartServer();
         BaseUrl = _factory.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!
             .Addresses.First().TrimEnd('/');
@@ -77,6 +80,16 @@ public sealed class AppFixture : IAsyncLifetime
         _playwright.Dispose();
         await _factory.DisposeAsync();
         await _container.DisposeAsync();
+    }
+
+    /// <summary>A port nothing is listening on. UseKestrel(port) did not bind the port it was given here; an explicit Listen does.</summary>
+    public static int FreePort()
+    {
+        var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop();
+        return port;
     }
 
     /// <summary>A fresh, isolated browser session (no shared storage with other tests).</summary>
