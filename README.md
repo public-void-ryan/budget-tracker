@@ -101,7 +101,7 @@ curl "localhost:5268/transactions?limit=2&cursor=<nextCursor>" -H "$A"
 
 `GET /transactions` returns your transactions newest first (posted date, then id, both descending) as `{ "items": [...], "nextCursor": "..." }`. Pass `nextCursor` back as `cursor` to get the next page; it is `null` on the last page. `limit` defaults to 50 and is clamped to 100 (below 1 is a 400). The cursor is opaque: treat it as a string and do not build one yourself.
 
-Filters, all combined with AND: `accountId`, `categoryId`, `from` and `to` (inclusive, written `yyyy-MM-dd`) and `isTransfer`. Filtering by an id that is not yours finds nothing rather than failing.
+Filters, all combined with AND: `accountId`, `categoryId`, `from` and `to` (inclusive, written `yyyy-MM-dd`), `isTransfer` and `uncategorized` (`true` for transactions with no category, `false` for those that have one; combining `uncategorized=true` with `categoryId` is a 400, since it could never match). Filtering by an id that is not yours finds nothing rather than failing.
 
 ### Importing a CSV
 
